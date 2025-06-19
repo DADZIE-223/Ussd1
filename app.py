@@ -27,7 +27,7 @@ def get_session(msisdn):
             "delivery_location": "",
             "payment_method": "",
             "network": "",
-            "email": f"{msisdn}@ussdfood.fake",
+            "email": f"user{msisdn}@example.com",
             "last_ref": None,
         }
     return user_sessions[msisdn]
@@ -42,6 +42,8 @@ def ussd_handler():
 
     session = get_session(msisdn)
     state = session["state"]
+    # Ensure email is always valid
+    session["email"] = f"user{msisdn}@example.com"
 
     # MAIN MENU
     if state == "MAIN_MENU":
@@ -268,7 +270,7 @@ def confirm_order(user_id, msisdn, session):
     )
     return ussd_response(user_id, msisdn, msg, True)
 
-def paystack_momo_payment(msisdn, amount, network, secret_key, email="customer@example.com"):
+def paystack_momo_payment(msisdn, amount, network, secret_key, email="user@example.com"):
     import requests
     url = "https://api.paystack.co/charge"
     headers = {
