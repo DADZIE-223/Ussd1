@@ -14,7 +14,7 @@ MENUS = {
     "Snacks": [("Meat Pie", 10), ("Chips", 8), ("Samosa", 12)],
 }
 
-PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "sk_test_xxx")  # Replace with your Paystack key
+PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")  # Replace with your Paystack key
 
 def get_session(msisdn):
     if msisdn not in user_sessions:
