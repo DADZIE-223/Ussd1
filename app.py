@@ -3,7 +3,7 @@ import os
 
 app = Flask(__name__)
 
-# In-memory session storage (not persistent; fine for MVP, single server)
+# In-memory session storage (for MVP only)
 user_sessions = {}
 
 CATEGORIES = ["Local Dishes", "Continental", "Drinks", "Snacks"]
@@ -33,6 +33,7 @@ def get_session(msisdn):
     return user_sessions[msisdn]
 
 @app.route("/", methods=["POST"])
+@app.route("/ussd", methods=["POST"])
 def ussd_handler():
     data = request.get_json()
     msisdn = data.get("MSISDN")
