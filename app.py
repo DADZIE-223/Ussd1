@@ -51,6 +51,9 @@ def ussd_handler():
         )
         if input_text == "" or input_text == "1":
             session["state"] = "CATEGORY"
+            # Show category menu
+            cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
+            msg = f"Select Category:\n{cat_menu}\n#. Back"
             return ussd_response(user_id, msisdn, msg, True)
         elif input_text == "2":
             msg = "No orders yet.\n#. Back"
@@ -68,15 +71,23 @@ def ussd_handler():
     if state == "CATEGORY":
         cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
         msg = f"Select Category:\n{cat_menu}\n#. Back"
-        if input_text == "" or input_text not in [str(i+1) for i in range(len(CATEGORIES))]+["#"]:
-            return ussd_response(user_id, msisdn, msg, True)
         if input_text == "#":
             session["state"] = "MAIN_MENU"
-            return ussd_handler()
-        cat = CATEGORIES[int(input_text)-1]
-        session["selected_category"] = cat
-        session["state"] = "ITEM"
-        return ussd_handler()
+            msg = (
+                "Welcome to FoodExpress!\n"
+                "1. Order Food\n2. My Orders\n3. Help\n0. Exit"
+            )
+            return ussd_response(user_id, msisdn, msg, True)
+        elif input_text in [str(i+1) for i in range(len(CATEGORIES))]:
+            cat = CATEGORIES[int(input_text)-1]
+            session["selected_category"] = cat
+            session["state"] = "ITEM"
+            menu = MENUS[cat]
+            menu_str = "\n".join([f"{i+1}. {m[0]} - GHS {m[1]}" for i, m in enumerate(menu)])
+            msg = f"{cat}:\n{menu_str}\n#. Back"
+            return ussd_response(user_id, msisdn, msg, True)
+        else:
+            return ussd_response(user_id, msisdn, msg, True)
 
     # ITEM MENU
     if state == "ITEM":
@@ -84,45 +95,53 @@ def ussd_handler():
         menu = MENUS[cat]
         menu_str = "\n".join([f"{i+1}. {m[0]} - GHS {m[1]}" for i, m in enumerate(menu)])
         msg = f"{cat}:\n{menu_str}\n#. Back"
-        if input_text == "" or input_text not in [str(i+1) for i in range(len(menu))]+["#"]:
-            return ussd_response(user_id, msisdn, msg, True)
         if input_text == "#":
             session["state"] = "CATEGORY"
-            return ussd_handler()
-        item = menu[int(input_text)-1]
-        session["selected_item"] = item
-        session["state"] = "QTY"
-        return ussd_handler()
+            cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
+            msg = f"Select Category:\n{cat_menu}\n#. Back"
+            return ussd_response(user_id, msisdn, msg, True)
+        elif input_text in [str(i+1) for i in range(len(menu))]:
+            item = menu[int(input_text)-1]
+            session["selected_item"] = item
+            session["state"] = "QTY"
+            msg = f"You selected {item[0]}.\nEnter quantity:"
+            return ussd_response(user_id, msisdn, msg, True)
+        else:
+            return ussd_response(user_id, msisdn, msg, True)
 
     # QUANTITY
     if state == "QTY":
-        msg = f"You selected {session['selected_item'][0]}.\nEnter quantity:"
-        if input_text == "" or not input_text.isdigit() or int(input_text) < 1:
-            return ussd_response(user_id, msisdn, msg, True)
-        qty = int(input_text)
-        session["quantity"] = qty
-        session["cart"].append((session["selected_item"], qty))
-        session["state"] = "CART"
         item = session["selected_item"][0]
-        msg = f"{qty} x {item} added to cart.\n1. Add more\n2. Checkout\n#. Cancel"
-        return ussd_response(user_id, msisdn, msg, True)
+        msg = f"You selected {item}.\nEnter quantity:"
+        if input_text.isdigit() and int(input_text) > 0:
+            qty = int(input_text)
+            session["quantity"] = qty
+            session["cart"].append((session["selected_item"], qty))
+            session["state"] = "CART"
+            msg = f"{qty} x {item} added to cart.\n1. Add more\n2. Checkout\n#. Cancel"
+            return ussd_response(user_id, msisdn, msg, True)
+        else:
+            return ussd_response(user_id, msisdn, msg, True)
 
     # ADD MORE OR CHECKOUT
     if state == "CART":
         msg = "1. Add more\n2. Checkout\n#. Cancel"
         if input_text == "1":
             session["state"] = "CATEGORY"
-            return ussd_handler()
+            cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
+            msg = f"Select Category:\n{cat_menu}\n#. Back"
+            return ussd_response(user_id, msisdn, msg, True)
         elif input_text == "2":
             session["state"] = "DELIVERY"
-            return ussd_handler()
+            msg = "Enter delivery location:"
+            return ussd_response(user_id, msisdn, msg, True)
         elif input_text == "#":
             session["cart"] = []
             session["state"] = "MAIN_MENU"
             msg = "Order cancelled.\n1. Order Food\n2. My Orders\n3. Help\n0. Exit"
             return ussd_response(user_id, msisdn, msg, True)
         else:
-            return ussd_response(user_id, msisdn, "Invalid option.\n"+msg, True)
+            return ussd_response(user_id, msisdn, "Invalid option.\n" + msg, True)
 
     # DELIVERY LOCATION
     if state == "DELIVERY":
@@ -131,37 +150,44 @@ def ussd_handler():
             return ussd_response(user_id, msisdn, msg, True)
         session["delivery_location"] = input_text
         session["state"] = "PAYMENT_METHOD"
-        return ussd_handler()
+        msg = "Select payment:\n1. Mobile Money\n2. Cash\n#. Back"
+        return ussd_response(user_id, msisdn, msg, True)
 
     # PAYMENT METHOD
     if state == "PAYMENT_METHOD":
         msg = "Select payment:\n1. Mobile Money\n2. Cash\n#. Back"
-        if input_text == "" or input_text not in ["1", "2", "#"]:
-            return ussd_response(user_id, msisdn, msg, True)
         if input_text == "1":
             session["payment_method"] = "Mobile Money"
             session["state"] = "MOMO_NETWORK"
-            return ussd_handler()
+            msg = "Choose Network:\n1. MTN\n2. Vodafone\n3. AirtelTigo\n#. Back"
+            return ussd_response(user_id, msisdn, msg, True)
         elif input_text == "2":
             session["payment_method"] = "Cash"
             session["state"] = "CONFIRM"
-            return ussd_handler()
+            # Show confirmation
+            return confirm_order(user_id, msisdn, session)
         elif input_text == "#":
             session["state"] = "DELIVERY"
-            return ussd_handler()
+            msg = "Enter delivery location:"
+            return ussd_response(user_id, msisdn, msg, True)
+        else:
+            return ussd_response(user_id, msisdn, msg, True)
 
     # MOBILE MONEY NETWORK
     if state == "MOMO_NETWORK":
         msg = "Choose Network:\n1. MTN\n2. Vodafone\n3. AirtelTigo\n#. Back"
         nets = {"1": "mtn", "2": "vodafone", "3": "airteltigo"}
-        if input_text == "" or input_text not in ["1", "2", "3", "#"]:
-            return ussd_response(user_id, msisdn, msg, True)
         if input_text == "#":
             session["state"] = "PAYMENT_METHOD"
-            return ussd_handler()
-        session["network"] = nets[input_text]
-        session["state"] = "MOMO_NUMBER"
-        return ussd_handler()
+            msg = "Select payment:\n1. Mobile Money\n2. Cash\n#. Back"
+            return ussd_response(user_id, msisdn, msg, True)
+        elif input_text in nets:
+            session["network"] = nets[input_text]
+            session["state"] = "MOMO_NUMBER"
+            msg = f"Enter MoMo number or 1 to use {msisdn}:"
+            return ussd_response(user_id, msisdn, msg, True)
+        else:
+            return ussd_response(user_id, msisdn, msg, True)
 
     # MOBILE MONEY NUMBER (can use MSISDN)
     if state == "MOMO_NUMBER":
@@ -173,37 +199,23 @@ def ussd_handler():
         else:
             session["momo_number"] = input_text
         session["state"] = "CONFIRM"
-        return ussd_handler()
+        return confirm_order(user_id, msisdn, session)
 
     # CONFIRM ORDER & INITIATE PAYMENT
     if state == "CONFIRM":
-        lines = [
-            f"{qty} x {item[0]} - GHS {item[1]*qty}"
-            for item, qty in session["cart"]
-        ]
-        total = sum(item[1]*qty for item, qty in session["cart"])
-        session["total"] = total
-        if session["payment_method"] == "Mobile Money":
-            momo = session.get("momo_number", msisdn)
-            payline = f"Mobile Money ({session['network'].capitalize()} - {momo})"
-        else:
-            payline = "Cash"
-        msg = (
-            "Order:\n" + "\n".join(lines) +
-            f"\nDelivery: {session['delivery_location']}" +
-            f"\nPayment: {payline}" +
-            f"\nTotal: GHS {total}\n1. Confirm & Pay\n2. Cancel"
-        )
         if input_text == "" or input_text not in ["1", "2"]:
-            return ussd_response(user_id, msisdn, msg, True)
+            # Show confirmation menu again
+            return confirm_order(user_id, msisdn, session)
         if input_text == "2":
             session["cart"] = []
             session["state"] = "MAIN_MENU"
-            return ussd_response(user_id, msisdn, "Order cancelled.\n1. Order Food\n2. My Orders\n3. Help\n0. Exit", True)
+            msg = "Order cancelled.\n1. Order Food\n2. My Orders\n3. Help\n0. Exit"
+            return ussd_response(user_id, msisdn, msg, True)
         # Payment
         if session["payment_method"] == "Mobile Money":
             momo = session.get("momo_number", msisdn)
             network = session["network"]
+            total = sum(item[1]*qty for item, qty in session["cart"])
             pay_resp = paystack_momo_payment(
                 momo, total, network, PAYSTACK_SECRET_KEY, session["email"]
             )
@@ -230,7 +242,31 @@ def ussd_handler():
 
     # fallback
     session["state"] = "MAIN_MENU"
-    return ussd_handler()
+    msg = (
+        "Welcome to FoodExpress!\n"
+        "1. Order Food\n2. My Orders\n3. Help\n0. Exit"
+    )
+    return ussd_response(user_id, msisdn, msg, True)
+
+def confirm_order(user_id, msisdn, session):
+    lines = [
+        f"{qty} x {item[0]} - GHS {item[1]*qty}"
+        for item, qty in session["cart"]
+    ]
+    total = sum(item[1]*qty for item, qty in session["cart"])
+    session["total"] = total
+    if session["payment_method"] == "Mobile Money":
+        momo = session.get("momo_number", msisdn)
+        payline = f"Mobile Money ({session['network'].capitalize()} - {momo if 'momo_number' in session else msisdn})"
+    else:
+        payline = "Cash"
+    msg = (
+        "Order:\n" + "\n".join(lines) +
+        f"\nDelivery: {session['delivery_location']}" +
+        f"\nPayment: {payline}" +
+        f"\nTotal: GHS {total}\n1. Confirm & Pay\n2. Cancel"
+    )
+    return ussd_response(user_id, msisdn, msg, True)
 
 def paystack_momo_payment(msisdn, amount, network, secret_key, email="customer@example.com"):
     import requests
