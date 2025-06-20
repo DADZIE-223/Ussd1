@@ -223,6 +223,7 @@ def ussd_handler():
             pay_resp = paystack_momo_payment(
                 momo, total, network, PAYSTACK_SECRET_KEY, session["email"]
             )
+            print("Paystack response:", pay_resp)  # Log the full Paystack response
             if pay_resp.get("status") == True:
                 session["cart"] = []
                 session["state"] = "MAIN_MENU"
