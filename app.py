@@ -1,7 +1,33 @@
 from flask import Flask, request, jsonify
 import os
+from datetime import datetime
+from pyairtable import Table
 
 app = Flask(__name__)
+
+# Airtable configuration
+AIRTABLE_PAT = os.getenv("AIRTABLE_PAT")
+AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
+AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME", "Responses")
+
+# Initialize Airtable Table client if credentials are set
+airtable_table = None
+if AIRTABLE_PAT and AIRTABLE_BASE_ID and AIRTABLE_TABLE_NAME:
+    airtable_table = Table(AIRTABLE_PAT, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
+
+def log_to_airtable(msisdn, userid, message, continue_session):
+    if airtable_table is None:
+        return
+    try:
+        airtable_table.create({
+            "MSISDN": msisdn,
+            "USERID": userid,
+            "Message": message,
+            "ContinueSession": str(continue_session),
+            "Timestamp": datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        print("Airtable log error:", e)
 
 # In-memory session storage (for MVP only)
 user_sessions = {}
@@ -14,7 +40,7 @@ MENUS = {
     "Snacks": [("Meat Pie", 10), ("Chips", 8), ("Samosa", 12)],
 }
 
-PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")  # Replace with your Paystack key
+PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 
 def get_session(msisdn):
     if msisdn not in user_sessions:
@@ -27,7 +53,7 @@ def get_session(msisdn):
             "delivery_location": "",
             "payment_method": "",
             "network": "",
-            "email": f"{msisdn}@flapussd.com",  # Use a valid domain for Paystack
+            "email": f"{msisdn}@flapussd.com",
             "last_ref": None,
         }
     return user_sessions[msisdn]
@@ -219,7 +245,6 @@ def ussd_handler():
             if pay_resp.get("status") == True:
                 session["cart"] = []
                 session["state"] = "MAIN_MENU"
-                # Only show voucher if it is Vodafone and voucher is present
                 if network.lower() == "vodafone" and "voucher" in pay_resp.get("data", {}):
                     voucher = pay_resp["data"]["voucher"]
                     return ussd_response(
@@ -228,7 +253,6 @@ def ussd_handler():
                         False
                     )
                 else:
-                    # For MTN and AirtelTigo, always display pop-up instruction
                     return ussd_response(
                         user_id, msisdn,
                         "Payment prompt sent. Approve on your phone. Thanks for ordering!",
@@ -260,9 +284,7 @@ def confirm_order(user_id, msisdn, session):
         f"{qty} x {item[0]} - GHS {item[1]*qty}"
         for item, qty in session["cart"]
     ]
-    # Calculate number of items
     item_count = sum(qty for item, qty in session["cart"])
-    # Delivery fee: 15 for first item, +5 per additional item
     delivery_fee = 15 + (item_count - 1) * 5 if item_count > 0 else 0
     extra_charge = 2
     items_total = sum(item[1]*qty for item, qty in session["cart"])
@@ -301,14 +323,13 @@ def paystack_momo_payment(msisdn, amount, network, secret_key, email="ussd@flapu
     }
     try:
         r = requests.post(url, json=data, headers=headers, timeout=15)
-        resp = r.json()
-        print("Paystack response:", resp)  # <-- THIS IS THE LOGGING CODE
-        return resp
+        return r.json()
     except Exception as e:
-        print("Paystack exception:", e)    # <-- OPTIONAL: LOG EXCEPTIONS
         return {"status": False, "message": str(e)}
 
 def ussd_response(userid, msisdn, msg, continue_session=True):
+    # Log every response to Airtable
+    log_to_airtable(msisdn, userid, msg[:120], continue_session)
     return jsonify({
         "USERID": userid,
         "MSISDN": msisdn,
@@ -317,6 +338,5 @@ def ussd_response(userid, msisdn, msg, continue_session=True):
     })
 
 if __name__ == "__main__":
-    # For Render, use PORT env variable if set, else default to 5000
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
