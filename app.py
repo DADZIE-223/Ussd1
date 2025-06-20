@@ -14,7 +14,7 @@ MENUS = {
     "Snacks": [("Meat Pie", 10), ("Chips", 8), ("Samosa", 12)],
 }
 
-PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")  # Replace with your Paystack key
+PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "sk_test_xxx")  # Replace with your Paystack key
 
 def get_session(msisdn):
     if msisdn not in user_sessions:
@@ -27,7 +27,7 @@ def get_session(msisdn):
             "delivery_location": "",
             "payment_method": "",
             "network": "",
-            "email": f"user{msisdn}@example.com",
+            "email": f"{msisdn}@ussdfood.fake",
             "last_ref": None,
         }
     return user_sessions[msisdn]
@@ -42,18 +42,15 @@ def ussd_handler():
 
     session = get_session(msisdn)
     state = session["state"]
-    # Ensure email is always valid
-    session["email"] = f"user{msisdn}@example.com"
 
     # MAIN MENU
     if state == "MAIN_MENU":
         msg = (
-            "Welcome to FoodExpress!\n"
+            "Welcome to FLAP Dish!\n"
             "1. Order Food\n2. My Orders\n3. Help\n0. Exit"
         )
         if input_text == "" or input_text == "1":
             session["state"] = "CATEGORY"
-            # Show category menu
             cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
             msg = f"Select Category:\n{cat_menu}\n#. Back"
             return ussd_response(user_id, msisdn, msg, True)
@@ -61,10 +58,10 @@ def ussd_handler():
             msg = "No orders yet.\n#. Back"
             return ussd_response(user_id, msisdn, msg, True)
         elif input_text == "3":
-            msg = "Call 0800-FOOD for help.\n#. Back"
+            msg = "Call 0548118716 for help.\n#. Back"
             return ussd_response(user_id, msisdn, msg, True)
         elif input_text == "0":
-            msg = "Thank you for using FoodExpress!"
+            msg = "Thank you for using FLAP Dish!"
             return ussd_response(user_id, msisdn, msg, False)
         else:
             return ussd_response(user_id, msisdn, "Invalid option.\n" + msg, True)
@@ -76,7 +73,7 @@ def ussd_handler():
         if input_text == "#":
             session["state"] = "MAIN_MENU"
             msg = (
-                "Welcome to FoodExpress!\n"
+                "Welcome to FLAP Dish!\n"
                 "1. Order Food\n2. My Orders\n3. Help\n0. Exit"
             )
             return ussd_response(user_id, msisdn, msg, True)
@@ -166,7 +163,6 @@ def ussd_handler():
         elif input_text == "2":
             session["payment_method"] = "Cash"
             session["state"] = "CONFIRM"
-            # Show confirmation
             return confirm_order(user_id, msisdn, session)
         elif input_text == "#":
             session["state"] = "DELIVERY"
@@ -206,7 +202,6 @@ def ussd_handler():
     # CONFIRM ORDER & INITIATE PAYMENT
     if state == "CONFIRM":
         if input_text == "" or input_text not in ["1", "2"]:
-            # Show confirmation menu again
             return confirm_order(user_id, msisdn, session)
         if input_text == "2":
             session["cart"] = []
@@ -224,11 +219,21 @@ def ussd_handler():
             if pay_resp.get("status") == True:
                 session["cart"] = []
                 session["state"] = "MAIN_MENU"
-                return ussd_response(
-                    user_id, msisdn,
-                    "Payment prompt sent. Approve on your phone. Thanks for ordering!",
-                    False
-                )
+                # Only show voucher if it is Vodafone and voucher is present
+                if network.lower() == "vodafone" and "voucher" in pay_resp.get("data", {}):
+                    voucher = pay_resp["data"]["voucher"]
+                    return ussd_response(
+                        user_id, msisdn,
+                        f"Enter this code on your phone to approve payment: {voucher}\nThanks for ordering!",
+                        False
+                    )
+                else:
+                    # For MTN and AirtelTigo, always display pop-up instruction
+                    return ussd_response(
+                        user_id, msisdn,
+                        "Payment prompt sent. Approve on your phone. Thanks for ordering!",
+                        False
+                    )
             else:
                 failmsg = pay_resp.get("message", "Payment failed. Try again.")
                 session["state"] = "CONFIRM"
@@ -245,7 +250,7 @@ def ussd_handler():
     # fallback
     session["state"] = "MAIN_MENU"
     msg = (
-        "Welcome to FoodExpress!\n"
+        "Welcome to FLAP Dish!\n"
         "1. Order Food\n2. My Orders\n3. Help\n0. Exit"
     )
     return ussd_response(user_id, msisdn, msg, True)
@@ -270,7 +275,7 @@ def confirm_order(user_id, msisdn, session):
     )
     return ussd_response(user_id, msisdn, msg, True)
 
-def paystack_momo_payment(msisdn, amount, network, secret_key, email="user@example.com"):
+def paystack_momo_payment(msisdn, amount, network, secret_key, email="customer@example.com"):
     import requests
     url = "https://api.paystack.co/charge"
     headers = {
