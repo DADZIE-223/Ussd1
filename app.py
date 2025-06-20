@@ -14,7 +14,7 @@ MENUS = {
     "Snacks": [("Meat Pie", 10), ("Chips", 8), ("Samosa", 12)],
 }
 
-PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY", "sk_test_xxx")  # Replace with your Paystack key
+PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")  # Replace with your Paystack key
 
 def get_session(msisdn):
     if msisdn not in user_sessions:
@@ -276,7 +276,6 @@ def confirm_order(user_id, msisdn, session):
         payline = "Cash"
     msg = (
         "Order:\n" + "\n".join(lines) +
-        f"\nDelivery: {session['delivery_location']}" +
         f"\nDelivery Fee: GHS {delivery_fee}" +
         f"\nCharge: GHS {extra_charge}" +
         f"\nPayment: {payline}" +
@@ -284,7 +283,7 @@ def confirm_order(user_id, msisdn, session):
     )
     return ussd_response(user_id, msisdn, msg, True)
 
-def paystack_momo_payment(msisdn, amount, network, secret_key, email="customer@example.com"):
+def paystack_momo_payment(msisdn, amount, network, secret_key, email="ussd@flapussd.com"):
     import requests
     url = "https://api.paystack.co/charge"
     headers = {
@@ -302,8 +301,11 @@ def paystack_momo_payment(msisdn, amount, network, secret_key, email="customer@e
     }
     try:
         r = requests.post(url, json=data, headers=headers, timeout=15)
-        return r.json()
+        resp = r.json()
+        print("Paystack response:", resp)  # <-- THIS IS THE LOGGING CODE
+        return resp
     except Exception as e:
+        print("Paystack exception:", e)    # <-- OPTIONAL: LOG EXCEPTIONS
         return {"status": False, "message": str(e)}
 
 def ussd_response(userid, msisdn, msg, continue_session=True):
