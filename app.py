@@ -27,7 +27,7 @@ def get_session(msisdn):
             "delivery_location": "",
             "payment_method": "",
             "network": "",
-            "email": f"{msisdn}@ussdfood.fake",
+            "email": f"{msisdn}@flapussd.com",  # Use a valid domain for Paystack
             "last_ref": None,
         }
     return user_sessions[msisdn]
@@ -212,7 +212,7 @@ def ussd_handler():
         if session["payment_method"] == "Mobile Money":
             momo = session.get("momo_number", msisdn)
             network = session["network"]
-            total = sum(item[1]*qty for item, qty in session["cart"])
+            total = session["total"]
             pay_resp = paystack_momo_payment(
                 momo, total, network, PAYSTACK_SECRET_KEY, session["email"]
             )
@@ -260,8 +260,15 @@ def confirm_order(user_id, msisdn, session):
         f"{qty} x {item[0]} - GHS {item[1]*qty}"
         for item, qty in session["cart"]
     ]
-    total = sum(item[1]*qty for item, qty in session["cart"])
+    # Calculate number of items
+    item_count = sum(qty for item, qty in session["cart"])
+    # Delivery fee: 15 for first item, +5 per additional item
+    delivery_fee = 15 + (item_count - 1) * 5 if item_count > 0 else 0
+    extra_charge = 2
+    items_total = sum(item[1]*qty for item, qty in session["cart"])
+    total = items_total + delivery_fee + extra_charge
     session["total"] = total
+
     if session["payment_method"] == "Mobile Money":
         momo = session.get("momo_number", msisdn)
         payline = f"Mobile Money ({session['network'].capitalize()} - {momo if 'momo_number' in session else msisdn})"
@@ -270,6 +277,8 @@ def confirm_order(user_id, msisdn, session):
     msg = (
         "Order:\n" + "\n".join(lines) +
         f"\nDelivery: {session['delivery_location']}" +
+        f"\nDelivery Fee: GHS {delivery_fee}" +
+        f"\nCharge: GHS {extra_charge}" +
         f"\nPayment: {payline}" +
         f"\nTotal: GHS {total}\n1. Confirm & Pay\n2. Cancel"
     )
