@@ -15,7 +15,6 @@ MENUS = {
 }
 
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")  # Replace with your Paystack key
-DELIVERY_FEE = 17
 
 def get_session(msisdn):
     if msisdn not in user_sessions:
@@ -49,7 +48,7 @@ def ussd_handler():
     # MAIN MENU
     if state == "MAIN_MENU":
         msg = (
-            "Welcome to FLAP Dish!\n"
+            "Welcome to FoodExpress!\n"
             "1. Order Food\n2. My Orders\n3. Help\n0. Exit"
         )
         if input_text == "" or input_text == "1":
@@ -62,10 +61,10 @@ def ussd_handler():
             msg = "No orders yet.\n#. Back"
             return ussd_response(user_id, msisdn, msg, True)
         elif input_text == "3":
-            msg = "Call 0548118716 for help.\n#. Back"
+            msg = "Call 0800-FOOD for help.\n#. Back"
             return ussd_response(user_id, msisdn, msg, True)
         elif input_text == "0":
-            msg = "Thank you for using FLAP Dish!"
+            msg = "Thank you for using FoodExpress!"
             return ussd_response(user_id, msisdn, msg, False)
         else:
             return ussd_response(user_id, msisdn, "Invalid option.\n" + msg, True)
@@ -77,7 +76,7 @@ def ussd_handler():
         if input_text == "#":
             session["state"] = "MAIN_MENU"
             msg = (
-                "Welcome to FLAP Dish!\n"
+                "Welcome to FoodExpress!\n"
                 "1. Order Food\n2. My Orders\n3. Help\n0. Exit"
             )
             return ussd_response(user_id, msisdn, msg, True)
@@ -218,18 +217,16 @@ def ussd_handler():
         if session["payment_method"] == "Mobile Money":
             momo = session.get("momo_number", msisdn)
             network = session["network"]
-            # Use the total including delivery fee
-            total = session.get("total", sum(item[1]*qty for item, qty in session["cart"]) + DELIVERY_FEE)
+            total = sum(item[1]*qty for item, qty in session["cart"])
             pay_resp = paystack_momo_payment(
                 momo, total, network, PAYSTACK_SECRET_KEY, session["email"]
             )
-            print("Paystack response:", pay_resp)  # Log the full Paystack response
             if pay_resp.get("status") == True:
                 session["cart"] = []
                 session["state"] = "MAIN_MENU"
                 return ussd_response(
                     user_id, msisdn,
-                    "Payment prompt sent. Approve on your phone.\n Incase Pop up doesn't show, dial *415*1738# and make payment \nThanks for ordering!",
+                    "Payment prompt sent. Approve on your phone. Thanks for ordering!",
                     False
                 )
             else:
@@ -258,8 +255,7 @@ def confirm_order(user_id, msisdn, session):
         f"{qty} x {item[0]} - GHS {item[1]*qty}"
         for item, qty in session["cart"]
     ]
-    subtotal = sum(item[1]*qty for item, qty in session["cart"])
-    total = subtotal + DELIVERY_FEE
+    total = sum(item[1]*qty for item, qty in session["cart"])
     session["total"] = total
     if session["payment_method"] == "Mobile Money":
         momo = session.get("momo_number", msisdn)
@@ -268,7 +264,7 @@ def confirm_order(user_id, msisdn, session):
         payline = "Cash"
     msg = (
         "Order:\n" + "\n".join(lines) +
-        f"\nDelivery Fee: GHS {DELIVERY_FEE}" +
+        f"\nDelivery: {session['delivery_location']}" +
         f"\nPayment: {payline}" +
         f"\nTotal: GHS {total}\n1. Confirm & Pay\n2. Cancel"
     )
