@@ -7,6 +7,7 @@ from pyairtable import Api
 import re
 import uuid
 import time
+import random
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -112,10 +113,12 @@ def log_to_airtable(msisdn, userid, message, continue_session, state=None):
         logger.error(f"Airtable log error: {e}")
 
 def generate_unique_reference():
-    """Generate unique payment reference"""
-    timestamp = str(int(time.time()))
-    random_part = str(uuid.uuid4())[:8]
-    return f"flap_{timestamp}_{random_part}"
+    """Generate unique payment reference with microseconds"""
+    import random
+    timestamp = str(int(time.time() * 1000))  # Include milliseconds
+    random_part = ''.join(random.choices('0123456789abcdef', k=8))
+    microseconds = str(datetime.now().microsecond)
+    return f"flap_{timestamp}_{random_part}_{microseconds}"
 
 def create_order(session, msisdn):
     """Create order record"""
@@ -165,6 +168,7 @@ def paystack_payment(msisdn, amount, network):
         return {"status": False, "message": "Payment not configured"}
     
     import requests
+    import random
     
     # Map network names to Paystack providers
     network_mapping = {
@@ -177,88 +181,76 @@ def paystack_payment(msisdn, amount, network):
     if not provider:
         return {"status": False, "message": "Unsupported network"}
     
-    # Generate unique reference
-    reference = generate_unique_reference()
-    
-    # Initialize transaction first
-    init_url = "https://api.paystack.co/transaction/initialize"
-    headers = {
-        "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
-        "Content-Type": "application/json"
-    }
-    
-    init_data = {
-        "amount": int(amount * 100),  # Convert to pesewas
-        "email": f"{msisdn}@flapussd.com",
-        "currency": "GHS",
-        "reference": reference,
-        "channels": ["mobile_money"],
-        "metadata": {
-            "custom_fields": [
-                {
-                    "display_name": "Mobile Number",
-                    "variable_name": "mobile_number", 
-                    "value": msisdn
-                }
-            ]
-        }
-    }
-    
-    try:
-        # Step 1: Initialize transaction
-        logger.info(f"Initializing payment for {msisdn}, amount: GHS {amount}, ref: {reference}")
-        init_response = requests.post(init_url, json=init_data, headers=headers, timeout=15)
-        init_result = init_response.json()
+    # Try up to 3 times with different references
+    for attempt in range(3):
+        # Generate unique reference with extra randomness
+        reference = generate_unique_reference()
         
-        if not init_result.get("status"):
-            logger.error(f"Payment init failed: {init_result}")
-            return {"status": False, "message": "Payment initialization failed"}
-        
-        logger.info(f"Payment initialized with reference: {reference}")
-        
-        # Step 2: Charge mobile money
-        charge_url = "https://api.paystack.co/charge"
-        charge_data = {
-            "amount": int(amount * 100),
-            "email": f"{msisdn}@flapussd.com",
-            "currency": "GHS",
-            "reference": reference,
-            "mobile_money": {
-                "phone": msisdn,
-                "provider": provider
-            }
+        headers = {
+            "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
+            "Content-Type": "application/json"
         }
         
-        logger.info(f"Charging mobile money: {provider} - {msisdn}")
-        charge_response = requests.post(charge_url, json=charge_data, headers=headers, timeout=30)
-        charge_result = charge_response.json()
-        
-        logger.info(f"Charge response: {charge_result}")
-        
-        if charge_result.get("status") and charge_result.get("data", {}).get("status") == "send_otp":
-            return {
-                "status": True, 
-                "message": "Payment prompt sent to your phone",
+        try:
+            # Direct charge without initialization
+            charge_url = "https://api.paystack.co/charge"
+            charge_data = {
+                "amount": int(amount * 100),
+                "email": f"{msisdn}@flapussd.com",
+                "currency": "GHS",
                 "reference": reference,
-                "display_text": charge_result.get("data", {}).get("display_text", "Check your phone for payment prompt")
+                "mobile_money": {
+                    "phone": msisdn,
+                    "provider": provider
+                }
             }
-        elif charge_result.get("status"):
-            return {
-                "status": True,
-                "message": "Payment processed successfully", 
-                "reference": reference
-            }
-        else:
-            error_msg = charge_result.get("message", "Payment failed")
-            logger.error(f"Payment charge failed: {charge_result}")
-            return {"status": False, "message": error_msg}
             
-    except requests.exceptions.Timeout:
-        logger.error("Payment request timed out")
-        return {"status": False, "message": "Payment request timed out"}
-    except Exception as e:
-        logger.error(f"Payment error: {e}")
-        return {"status": False, "message": f"Payment error: {str(e)}"}
+            logger.info(f"Attempt {attempt + 1}: Charging mobile money: {provider} - {msisdn}, ref: {reference}")
+            charge_response = requests.post(charge_url, json=charge_data, headers=headers, timeout=30)
+            charge_result = charge_response.json()
+            
+            logger.info(f"Charge response: {charge_result}")
+            
+            # Check for duplicate reference error
+            if (not charge_result.get("status") and 
+                charge_result.get("code") == "duplicate_reference"):
+                logger.warning(f"Duplicate reference on attempt {attempt + 1}, retrying...")
+                time.sleep(0.5)  # Brief delay before retry
+                continue
+            
+            # Success cases
+            if charge_result.get("status"):
+                data = charge_result.get("data", {})
+                if data.get("status") == "send_otp":
+                    return {
+                        "status": True, 
+                        "message": "Payment prompt sent to your phone",
+                        "reference": reference,
+                        "display_text": data.get("display_text", "Check your phone for payment prompt")
+                    }
+                else:
+                    return {
+                        "status": True,
+                        "message": "Payment processed successfully", 
+                        "reference": reference
+                    }
+            else:
+                # Other errors
+                error_msg = charge_result.get("message", "Payment failed")
+                logger.error(f"Payment failed: {charge_result}")
+                return {"status": False, "message": error_msg}
+                
+        except requests.exceptions.Timeout:
+            logger.error("Payment request timed out")
+            return {"status": False, "message": "Payment request timed out"}
+        except Exception as e:
+            logger.error(f"Payment error on attempt {attempt + 1}: {e}")
+            if attempt == 2:  # Last attempt
+                return {"status": False, "message": f"Payment error: {str(e)}"}
+            continue
+    
+    # If all attempts failed
+    return {"status": False, "message": "Payment failed after multiple attempts"}
 
 @app.route("/", methods=["POST"])
 @app.route("/ussd", methods=["POST"])
@@ -588,3 +580,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting USSD Food Ordering on port {port}")
     app.run(host="0.0.0.0", port=port)
+
