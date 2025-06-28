@@ -50,8 +50,8 @@ memory_sessions = {}
 
 def get_airtable_datetime():
     """Get datetime in Airtable-compatible format"""
-    # Use simple ISO format without timezone info
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Airtable expects ISO date format with 24-hour time
+    return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 def validate_phone_number(phone):
     """Validate phone number - must start with 233"""
