@@ -47,7 +47,7 @@ memory_sessions = {}
 
 def validate_phone_number(phone):
     """Validate Ghana phone number"""
-    pattern = r'^(\+233|0)[2-9]\d{8}$'
+    pattern = r'^(\233|0)[2-9]\d{8}$'
     return bool(re.match(pattern, phone))
 
 def sanitize_input(text):
