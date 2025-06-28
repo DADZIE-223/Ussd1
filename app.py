@@ -170,7 +170,7 @@ def paystack_payment(msisdn, amount, network):
     import requests
     import random
     
-    # Map network names to Paystack providers
+    # Map network names to Paystack providers for Ghana
     network_mapping = {
         "mtn": "mtn",
         "vodafone": "vod", 
@@ -192,7 +192,49 @@ def paystack_payment(msisdn, amount, network):
         }
         
         try:
-            # Direct charge without initialization
+            # Step 1: Initialize transaction for mobile money
+            init_url = "https://api.paystack.co/transaction/initialize"
+            init_data = {
+                "amount": int(amount * 100),
+                "email": f"{msisdn}@flapussd.com",
+                "currency": "GHS",
+                "reference": reference,
+                "channels": ["mobile_money"],  # Force mobile money only
+                "metadata": {
+                    "custom_fields": [
+                        {
+                            "display_name": "Mobile Number",
+                            "variable_name": "mobile_number", 
+                            "value": msisdn
+                        },
+                        {
+                            "display_name": "Network",
+                            "variable_name": "network",
+                            "value": network.upper()
+                        }
+                    ]
+                }
+            }
+            
+            logger.info(f"Attempt {attempt + 1}: Initializing mobile money payment for {msisdn}, ref: {reference}")
+            init_response = requests.post(init_url, json=init_data, headers=headers, timeout=15)
+            init_result = init_response.json()
+            
+            logger.info(f"Init response: {init_result}")
+            
+            if not init_result.get("status"):
+                if init_result.get("code") == "duplicate_reference":
+                    logger.warning(f"Duplicate reference on attempt {attempt + 1}, retrying...")
+                    time.sleep(0.5)
+                    continue
+                else:
+                    logger.error(f"Payment init failed: {init_result}")
+                    return {"status": False, "message": init_result.get("message", "Payment initialization failed")}
+            
+            # Step 2: Charge mobile money using the authorization URL
+            auth_url = init_result["data"]["authorization_url"]
+            
+            # For mobile money, we need to submit the mobile money details
             charge_url = "https://api.paystack.co/charge"
             charge_data = {
                 "amount": int(amount * 100),
@@ -202,10 +244,19 @@ def paystack_payment(msisdn, amount, network):
                 "mobile_money": {
                     "phone": msisdn,
                     "provider": provider
+                },
+                "metadata": {
+                    "custom_fields": [
+                        {
+                            "display_name": "Mobile Number",
+                            "variable_name": "mobile_number", 
+                            "value": msisdn
+                        }
+                    ]
                 }
             }
             
-            logger.info(f"Attempt {attempt + 1}: Charging mobile money: {provider} - {msisdn}, ref: {reference}")
+            logger.info(f"Charging mobile money: {provider} - {msisdn}")
             charge_response = requests.post(charge_url, json=charge_data, headers=headers, timeout=30)
             charge_result = charge_response.json()
             
@@ -214,25 +265,41 @@ def paystack_payment(msisdn, amount, network):
             # Check for duplicate reference error
             if (not charge_result.get("status") and 
                 charge_result.get("code") == "duplicate_reference"):
-                logger.warning(f"Duplicate reference on attempt {attempt + 1}, retrying...")
-                time.sleep(0.5)  # Brief delay before retry
+                logger.warning(f"Duplicate reference on charge attempt {attempt + 1}, retrying...")
+                time.sleep(0.5)
                 continue
             
             # Success cases
             if charge_result.get("status"):
                 data = charge_result.get("data", {})
-                if data.get("status") == "send_otp":
+                status = data.get("status", "")
+                
+                if status == "send_otp":
                     return {
                         "status": True, 
                         "message": "Payment prompt sent to your phone",
                         "reference": reference,
-                        "display_text": data.get("display_text", "Check your phone for payment prompt")
+                        "display_text": data.get("display_text", f"Dial *{provider.upper()}# to complete payment")
                     }
-                else:
+                elif status == "success":
                     return {
                         "status": True,
                         "message": "Payment processed successfully", 
                         "reference": reference
+                    }
+                elif status == "pending":
+                    return {
+                        "status": True,
+                        "message": "Payment is being processed",
+                        "reference": reference,
+                        "display_text": "Check your phone for payment prompt"
+                    }
+                else:
+                    return {
+                        "status": True,
+                        "message": "Payment initiated successfully",
+                        "reference": reference,
+                        "display_text": f"Check your {network.upper()} mobile money for payment prompt"
                     }
             else:
                 # Other errors
@@ -242,7 +309,9 @@ def paystack_payment(msisdn, amount, network):
                 
         except requests.exceptions.Timeout:
             logger.error("Payment request timed out")
-            return {"status": False, "message": "Payment request timed out"}
+            if attempt == 2:  # Last attempt
+                return {"status": False, "message": "Payment request timed out"}
+            continue
         except Exception as e:
             logger.error(f"Payment error on attempt {attempt + 1}: {e}")
             if attempt == 2:  # Last attempt
@@ -580,4 +649,3 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting USSD Food Ordering on port {port}")
     app.run(host="0.0.0.0", port=port)
-
