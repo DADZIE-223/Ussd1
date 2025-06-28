@@ -2,10 +2,11 @@ from flask import Flask, request, jsonify
 import os
 import json
 import logging
-from datetime import datetime
-from pyairtable import Table
+from datetime import datetime, timezone
+from pyairtable import Api
 import re
 import uuid
+import time
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -21,13 +22,15 @@ AIRTABLE_ORDERS_TABLE = os.getenv("AIRTABLE_ORDERS_TABLE", "Orders")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 HELP_PHONE = os.getenv("HELP_PHONE", "0548118716")
 
-# Airtable setup (optional)
+# Airtable setup (optional) - Using new API
 airtable_table = None
 airtable_orders = None
 if AIRTABLE_PAT and AIRTABLE_BASE_ID:
     try:
-        airtable_table = Table(AIRTABLE_PAT, AIRTABLE_BASE_ID, AIRTABLE_TABLE_NAME)
-        airtable_orders = Table(AIRTABLE_PAT, AIRTABLE_BASE_ID, AIRTABLE_ORDERS_TABLE)
+        api = Api(AIRTABLE_PAT)
+        base = api.base(AIRTABLE_BASE_ID)
+        airtable_table = base.table(AIRTABLE_TABLE_NAME)
+        airtable_orders = base.table(AIRTABLE_ORDERS_TABLE)
         logger.info("Airtable connected")
     except Exception as e:
         logger.error(f"Airtable failed: {e}")
@@ -46,8 +49,8 @@ memory_sessions = {}
 
 def get_airtable_datetime():
     """Get datetime in Airtable-compatible format"""
-    from datetime import timezone
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    # Use simple ISO format without timezone info
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def validate_phone_number(phone):
     """Validate phone number - must start with 233"""
@@ -107,6 +110,12 @@ def log_to_airtable(msisdn, userid, message, continue_session, state=None):
         })
     except Exception as e:
         logger.error(f"Airtable log error: {e}")
+
+def generate_unique_reference():
+    """Generate unique payment reference"""
+    timestamp = str(int(time.time()))
+    random_part = str(uuid.uuid4())[:8]
+    return f"flap_{timestamp}_{random_part}"
 
 def create_order(session, msisdn):
     """Create order record"""
@@ -168,6 +177,9 @@ def paystack_payment(msisdn, amount, network):
     if not provider:
         return {"status": False, "message": "Unsupported network"}
     
+    # Generate unique reference
+    reference = generate_unique_reference()
+    
     # Initialize transaction first
     init_url = "https://api.paystack.co/transaction/initialize"
     headers = {
@@ -179,6 +191,7 @@ def paystack_payment(msisdn, amount, network):
         "amount": int(amount * 100),  # Convert to pesewas
         "email": f"{msisdn}@flapussd.com",
         "currency": "GHS",
+        "reference": reference,
         "channels": ["mobile_money"],
         "metadata": {
             "custom_fields": [
@@ -193,7 +206,7 @@ def paystack_payment(msisdn, amount, network):
     
     try:
         # Step 1: Initialize transaction
-        logger.info(f"Initializing payment for {msisdn}, amount: GHS {amount}")
+        logger.info(f"Initializing payment for {msisdn}, amount: GHS {amount}, ref: {reference}")
         init_response = requests.post(init_url, json=init_data, headers=headers, timeout=15)
         init_result = init_response.json()
         
@@ -201,7 +214,6 @@ def paystack_payment(msisdn, amount, network):
             logger.error(f"Payment init failed: {init_result}")
             return {"status": False, "message": "Payment initialization failed"}
         
-        reference = init_result["data"]["reference"]
         logger.info(f"Payment initialized with reference: {reference}")
         
         # Step 2: Charge mobile money
