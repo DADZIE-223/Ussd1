@@ -44,6 +44,10 @@ MENUS = {
 # In-memory session storage
 memory_sessions = {}
 
+def get_airtable_datetime():
+    """Get datetime in Airtable-compatible format"""
+    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+
 def validate_phone_number(phone):
     """Validate phone number - must start with 233"""
     if not phone:
@@ -98,7 +102,7 @@ def log_to_airtable(msisdn, userid, message, continue_session, state=None):
             "Message": message,
             "ContinueSession": str(continue_session),
             "State": state or "unknown",
-            "Timestamp": datetime.utcnow().isoformat()
+            "Timestamp": get_airtable_datetime()
         })
     except Exception as e:
         logger.error(f"Airtable log error: {e}")
@@ -131,7 +135,7 @@ def create_order(session, msisdn):
                 "DeliveryLocation": session["delivery_location"],
                 "PaymentMethod": session["payment_method"],
                 "Status": "Pending",
-                "CreatedAt": datetime.utcnow().isoformat()
+                "CreatedAt": get_airtable_datetime()
             })
         except Exception as e:
             logger.error(f"Order log error: {e}")
@@ -140,7 +144,7 @@ def create_order(session, msisdn):
     session["order_history"].append({
         "order_id": order_id,
         "total": total,
-        "created_at": datetime.utcnow().isoformat()
+        "created_at": get_airtable_datetime()
     })
     
     return order_id
@@ -442,7 +446,7 @@ def show_confirmation(session, user_id, msisdn):
     """Show order confirmation"""
     lines = [f"{qty} x {item[0]} - GHS {item[1]*qty}" for item, qty in session["cart"]]
     item_count = sum(qty for item, qty in session["cart"])
-    delivery_fee = 15 + (item_count - 1) * 5 if item_count > 0 else 0
+    delivery_fee = 15 + (total_items - 1) * 5 if item_count > 0 else 0
     extra_charge = 2
     items_total = sum(item[1]*qty for item, qty in session["cart"])
     total = items_total + delivery_fee + extra_charge
@@ -480,7 +484,7 @@ def health_check():
     """Health check"""
     return jsonify({
         "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": get_airtable_datetime(),
         "airtable": "connected" if airtable_table else "disabled"
     })
 
