@@ -103,42 +103,21 @@ def log_to_airtable(msisdn, userid, message, continue_session, state=None, sessi
         return
     
     try:
-        # If session_id is provided, update existing record
-        if session_id:
-            # Get existing record
-            record = airtable_table.first(formula=f"MSISDN='{msisdn}' AND USERID='{userid}'")
-            if record:
-                # Get existing messages and add new one
-                existing_messages = {}
-                for key, value in record['fields'].items():
-                    if key.startswith('M') and value:
-                        existing_messages[key] = value
-                
-                # Find next available message column
-                next_msg_col = f'M{len(existing_messages) + 1}'
-                existing_messages[next_msg_col] = message
-                
-                # Update record with new message
-                airtable_table.update(
-                    record['id'],
-                    {**existing_messages,
-                     "ContinueSession": str(continue_session),
-                     "State": state or "unknown",
-                     "Timestamp": get_airtable_datetime()}
-                )
-                return
-        
-        # If no session_id, create new record
+        # Always create a new record for each message to ensure logging
+        # This is simpler and more reliable than trying to update existing records
         airtable_table.create({
             "MSISDN": msisdn,
             "USERID": userid,
             "M1": message,
             "ContinueSession": str(continue_session),
             "State": state or "unknown",
+            "SessionID": session_id or "unknown",
             "Timestamp": get_airtable_datetime()
         })
+        logger.info(f"Logged to Airtable: {msisdn} - {message[:50]}...")
     except Exception as e:
         logger.error(f"Airtable log error: {e}")
+        # Don't let Airtable errors break the USSD flow
 
 def generate_unique_reference():
     """Generate unique payment reference with high randomness"""
@@ -369,7 +348,7 @@ def ussd_handler():
         logger.info(f"USSD: {msisdn}, State: {state}, Input: '{input_text}'")
         
         # Log the initial message
-        log_to_airtable(msisdn, user_id, input_text, True, session['state'], session['session_id'])
+        log_to_airtable(msisdn, user_id, input_text, True, session['state'], session.get('session_id'))
         
         # Handle different states
         if state == "MAIN_MENU":
