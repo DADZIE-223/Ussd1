@@ -2,7 +2,7 @@ from flask import Flask, request, jsonify
 import os
 import json
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from pyairtable import Table
 import re
 import uuid
@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Configuration from environment variables
-REDIS_URL = os.getenv("REDIS_URL")
 AIRTABLE_PAT = os.getenv("AIRTABLE_PAT")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME", "Responses")
@@ -42,13 +41,24 @@ MENUS = {
     "Snacks": [("Meat Pie", 10), ("Chips", 8), ("Samosa", 12)],
 }
 
-# In-memory session storage (fallback)
+# In-memory session storage
 memory_sessions = {}
 
 def validate_phone_number(phone):
-    """Validate Ghana phone number"""
+    """Validate phone number - must start with 233"""
+    if not phone:
+        return False
+    
+    # Remove any spaces or special characters
+    clean_phone = re.sub(r'[^\d]', '', phone)
+    
+    # Must be 233 followed by 9 digits (233241234567)
     pattern = r'^233[2-9]\d{8}$'
-    return bool(re.match(pattern, phone))
+    
+    if re.match(pattern, clean_phone):
+        return True
+        
+    return False
 
 def sanitize_input(text):
     """Clean user input"""
@@ -57,21 +67,7 @@ def sanitize_input(text):
     return re.sub(r'[<>"\']', '', text.strip())[:200]
 
 def get_session(msisdn):
-    """Get user session (Redis or memory)"""
-    if redis_client:
-        try:
-            key = f"session:{msisdn}"
-            session_data = redis_client.get(key)
-            if session_data:
-                session = json.loads(session_data)
-                # Update activity and save back
-                session["last_activity"] = datetime.utcnow().isoformat()
-                redis_client.setex(key, 1800, json.dumps(session))  # 30 min timeout
-                return session
-        except Exception as e:
-            logger.error(f"Redis session error: {e}")
-    
-    # Fallback to memory
+    """Get user session from memory"""
     if msisdn not in memory_sessions:
         memory_sessions[msisdn] = {
             "state": "MAIN_MENU",
@@ -88,17 +84,7 @@ def get_session(msisdn):
     return memory_sessions[msisdn]
 
 def save_session(msisdn, session):
-    """Save user session"""
-    if redis_client:
-        try:
-            key = f"session:{msisdn}"
-            session["last_activity"] = datetime.utcnow().isoformat()
-            redis_client.setex(key, 1800, json.dumps(session))
-            return
-        except Exception as e:
-            logger.error(f"Redis save error: {e}")
-    
-    # Fallback to memory
+    """Save user session to memory"""
     memory_sessions[msisdn] = session
 
 def log_to_airtable(msisdn, userid, message, continue_session, state=None):
@@ -200,8 +186,17 @@ def ussd_handler():
         input_text = sanitize_input(data.get("USERDATA", ""))
         user_id = data.get("USERID", "NALOTest")
         
-        if not msisdn or not validate_phone_number(msisdn):
-            return ussd_response(user_id, msisdn or "unknown", "Invalid phone number.", False)
+        # Debug logging
+        logger.info(f"Received MSISDN: '{msisdn}' (type: {type(msisdn)})")
+        logger.info(f"Full request data: {data}")
+        
+        if not msisdn:
+            logger.error("No MSISDN provided in request")
+            return ussd_response(user_id, "unknown", "No phone number provided.", False)
+        
+        if not validate_phone_number(msisdn):
+            logger.error(f"Phone validation failed for: '{msisdn}'")
+            return ussd_response(user_id, msisdn, f"Phone must start with 233. Got: {msisdn}", False)
         
         session = get_session(msisdn)
         state = session["state"]
@@ -486,7 +481,6 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "timestamp": datetime.utcnow().isoformat(),
-        "redis": "connected" if redis_client else "memory",
         "airtable": "connected" if airtable_table else "disabled"
     })
 
