@@ -129,11 +129,12 @@ def generate_unique_reference():
     random_data = ''.join(random.choices('0123456789abcdefghijklmnopqrstuvwxyz', k=12))
     unique_string = f"{timestamp}_{random_data}_{random.randint(100000, 999999)}"
     
-    # Create hash to ensure uniqueness
+    # Create hash to ensure uniqueness - only use alphanumeric characters
     hash_object = hashlib.md5(unique_string.encode())
     hash_hex = hash_object.hexdigest()[:10]
     
-    return f"flap_{hash_hex}_{int(time.time())}"
+    # Ensure reference only contains allowed characters: alphanumeric, -, ., =
+    return f"flap{hash_hex}{int(time.time())}"
 
 def create_order(session, msisdn):
     """Create order record"""
@@ -178,7 +179,7 @@ def create_order(session, msisdn):
     return order_id
 
 def paystack_payment(msisdn, amount, network):
-    """Process Paystack payment for Ghana Mobile Money - Initialize with Direct Mobile Money"""
+    """Process Paystack payment for Ghana Mobile Money - Direct Charge"""
     if not PAYSTACK_SECRET_KEY:
         return {"status": False, "message": "Payment not configured"}
     
@@ -206,14 +207,13 @@ def paystack_payment(msisdn, amount, network):
         }
         
         try:
-            # Initialize with mobile money channel - this should trigger STK push directly
-            initialize_url = "https://api.paystack.co/transaction/initialize"
-            initialize_data = {
-                "amount": int(amount * 100),  # Convert to pesewas
+            # Direct mobile money charge - this should trigger STK push
+            charge_url = "https://api.paystack.co/charge"
+            charge_data = {
+                "amount": str(int(amount * 100)),  # Convert to pesewas as string
                 "email": f"{msisdn}@flapussd.com",
                 "currency": "GHS",
                 "reference": reference,
-                "channels": ["mobile_money"],  # Force mobile money channel
                 "mobile_money": {
                     "phone": msisdn,
                     "provider": provider
@@ -239,29 +239,31 @@ def paystack_payment(msisdn, amount, network):
                 }
             }
             
-            logger.info(f"Attempt {attempt + 1}: Initialize mobile money payment")
+            logger.info(f"Attempt {attempt + 1}: Direct mobile money charge")
             logger.info(f"Phone: {msisdn}, Provider: {provider}, Amount: GHS {amount}")
             logger.info(f"Reference: {reference}")
             
-            initialize_response = requests.post(initialize_url, json=initialize_data, headers=headers, timeout=30)
-            initialize_result = initialize_response.json()
+            charge_response = requests.post(charge_url, json=charge_data, headers=headers, timeout=30)
+            charge_result = charge_response.json()
             
-            logger.info(f"Initialize response: {initialize_result}")
+            logger.info(f"Charge response: {charge_result}")
             
             # Check for duplicate reference error
-            if (not initialize_result.get("status") and 
-                initialize_result.get("code") == "duplicate_reference"):
+            if (not charge_result.get("status") and 
+                charge_result.get("code") == "duplicate_reference"):
                 logger.warning(f"Duplicate reference on attempt {attempt + 1}, retrying...")
                 time.sleep(1)  # Wait longer between retries
                 continue
             
-            # Handle initialization response
-            if initialize_result.get("status"):
-                data = initialize_result.get("data", {})
+            # Handle response
+            if charge_result.get("status"):
+                data = charge_result.get("data", {})
+                status = data.get("status", "")
                 
-                # For mobile money, the initialize should trigger STK push directly
-                # Check if we got a success response indicating STK was sent
-                if data.get("status") == "send_otp" or data.get("status") == "pending":
+                logger.info(f"Payment status: {status}")
+                
+                if status == "send_otp":
+                    # Mobile money prompt sent successfully
                     display_text = data.get("display_text", "")
                     if not display_text:
                         display_text = f"Check your {network.upper()} phone for payment prompt"
@@ -272,17 +274,24 @@ def paystack_payment(msisdn, amount, network):
                         "reference": reference,
                         "display_text": display_text
                     }
-                elif data.get("status") == "success":
+                elif status == "success":
                     return {
                         "status": True,
                         "message": "Payment completed successfully", 
                         "reference": reference
                     }
-                elif data.get("status") == "failed":
+                elif status == "pending":
+                    return {
+                        "status": True,
+                        "message": "Payment is being processed",
+                        "reference": reference,
+                        "display_text": f"Check your {network.upper()} phone for payment prompt"
+                    }
+                elif status == "failed":
                     error_msg = data.get("gateway_response", "Payment failed")
                     return {"status": False, "message": error_msg}
                 else:
-                    # For any other status, assume STK was sent
+                    # For any other status, assume it's processing
                     return {
                         "status": True,
                         "message": "Payment initiated",
@@ -290,9 +299,9 @@ def paystack_payment(msisdn, amount, network):
                         "display_text": f"Check your {network.upper()} mobile money for payment prompt"
                     }
             else:
-                # Initialization failed
-                error_msg = initialize_result.get("message", "Payment initialization failed")
-                logger.error(f"Initialization failed: {initialize_result}")
+                # Payment failed
+                error_msg = charge_result.get("message", "Payment failed")
+                logger.error(f"Payment failed: {charge_result}")
                 
                 # Don't retry for certain errors
                 if any(word in error_msg.lower() for word in ["insufficient", "invalid", "declined"]):
