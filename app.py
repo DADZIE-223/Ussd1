@@ -46,7 +46,8 @@ memory_sessions = {}
 
 def get_airtable_datetime():
     """Get datetime in Airtable-compatible format"""
-    return datetime.now().strftime("%Y-%m-%dT%H:%M:%S.000Z")
+    from datetime import timezone
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
 
 def validate_phone_number(phone):
     """Validate phone number - must start with 233"""
@@ -313,10 +314,13 @@ def handle_main_menu(input_text, session, user_id, msisdn):
     """Handle main menu"""
     msg = "Welcome to FLAP Dish!\n1. Order Food\n2. My Orders\n3. Help\n0. Exit"
     
-    if input_text == "" or input_text == "1":
-        session["state"] = "CATEGORY"
-        cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
-        msg = f"Select Category:\n{cat_menu}\n#. Back"
+    # Handle initial USSD dial or empty input - show welcome menu
+    if input_text == "" or input_text.startswith("*") or input_text == "1":
+        if input_text == "1":
+            session["state"] = "CATEGORY"
+            cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
+            msg = f"Select Category:\n{cat_menu}\n#. Back"
+        # For empty or USSD dial codes, just show the main menu
     elif input_text == "2":
         orders = session.get("order_history", [])
         if orders:
@@ -332,8 +336,14 @@ def handle_main_menu(input_text, session, user_id, msisdn):
         return ussd_response(user_id, msisdn, msg, False)
     elif input_text == "#":
         pass  # Stay on main menu
+    elif input_text in ["1", "2", "3", "0"]:
+        # Valid options are handled above
+        pass
     else:
-        msg = "Invalid option.\n" + msg
+        # Only show "Invalid option" for actual invalid menu choices, not USSD dial codes
+        if len(input_text) == 1 and input_text.isdigit():
+            msg = "Invalid option.\n" + msg
+        # For other inputs (like USSD codes), just show the main menu
     
     return ussd_response(user_id, msisdn, msg, True)
 
@@ -520,7 +530,7 @@ def show_confirmation(session, user_id, msisdn):
     """Show order confirmation"""
     lines = [f"{qty} x {item[0]} - GHS {item[1]*qty}" for item, qty in session["cart"]]
     item_count = sum(qty for item, qty in session["cart"])
-    delivery_fee = 15 + (total_items - 1) * 5 if item_count > 0 else 0
+    delivery_fee = 15 + (item_count - 1) * 5 if item_count > 0 else 0
     extra_charge = 2
     items_total = sum(item[1]*qty for item, qty in session["cart"])
     total = items_total + delivery_fee + extra_charge
