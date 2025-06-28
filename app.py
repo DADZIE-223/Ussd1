@@ -88,7 +88,8 @@ def get_session(msisdn):
             "network": "",
             "momo_number": "",
             "total": 0,
-            "order_history": []
+            "order_history": [],
+            "session_id": str(uuid.uuid4())  # Add session ID
         }
     return memory_sessions[msisdn]
 
@@ -96,15 +97,42 @@ def save_session(msisdn, session):
     """Save user session to memory"""
     memory_sessions[msisdn] = session
 
-def log_to_airtable(msisdn, userid, message, continue_session, state=None):
-    """Log to Airtable"""
+def log_to_airtable(msisdn, userid, message, continue_session, state=None, session_id=None):
+    """Log to Airtable with multiple message columns"""
     if not airtable_table:
         return
+    
     try:
+        # If session_id is provided, update existing record
+        if session_id:
+            # Get existing record
+            record = airtable_table.first(formula=f"MSISDN='{msisdn}' AND USERID='{userid}'")
+            if record:
+                # Get existing messages and add new one
+                existing_messages = {}
+                for key, value in record['fields'].items():
+                    if key.startswith('M') and value:
+                        existing_messages[key] = value
+                
+                # Find next available message column
+                next_msg_col = f'M{len(existing_messages) + 1}'
+                existing_messages[next_msg_col] = message
+                
+                # Update record with new message
+                airtable_table.update(
+                    record['id'],
+                    {**existing_messages,
+                     "ContinueSession": str(continue_session),
+                     "State": state or "unknown",
+                     "Timestamp": get_airtable_datetime()}
+                )
+                return
+        
+        # If no session_id, create new record
         airtable_table.create({
             "MSISDN": msisdn,
             "USERID": userid,
-            "Message": message,
+            "M1": message,
             "ContinueSession": str(continue_session),
             "State": state or "unknown",
             "Timestamp": get_airtable_datetime()
@@ -171,7 +199,7 @@ def create_order(session, msisdn):
     return order_id
 
 def paystack_payment(msisdn, amount, network):
-    """Process Paystack payment for Ghana Mobile Money - Direct Charge Only"""
+    """Process Paystack payment for Ghana Mobile Money - Initialize with Direct Mobile Money"""
     if not PAYSTACK_SECRET_KEY:
         return {"status": False, "message": "Payment not configured"}
     
@@ -199,13 +227,14 @@ def paystack_payment(msisdn, amount, network):
         }
         
         try:
-            # Direct mobile money charge - NO INITIALIZATION
-            charge_url = "https://api.paystack.co/charge"
-            charge_data = {
+            # Initialize with mobile money channel - this should trigger STK push directly
+            initialize_url = "https://api.paystack.co/transaction/initialize"
+            initialize_data = {
                 "amount": int(amount * 100),  # Convert to pesewas
                 "email": f"{msisdn}@flapussd.com",
                 "currency": "GHS",
                 "reference": reference,
+                "channels": ["mobile_money"],  # Force mobile money channel
                 "mobile_money": {
                     "phone": msisdn,
                     "provider": provider
@@ -231,31 +260,29 @@ def paystack_payment(msisdn, amount, network):
                 }
             }
             
-            logger.info(f"Attempt {attempt + 1}: Direct mobile money charge")
+            logger.info(f"Attempt {attempt + 1}: Initialize mobile money payment")
             logger.info(f"Phone: {msisdn}, Provider: {provider}, Amount: GHS {amount}")
             logger.info(f"Reference: {reference}")
             
-            charge_response = requests.post(charge_url, json=charge_data, headers=headers, timeout=30)
-            charge_result = charge_response.json()
+            initialize_response = requests.post(initialize_url, json=initialize_data, headers=headers, timeout=30)
+            initialize_result = initialize_response.json()
             
-            logger.info(f"Charge response: {charge_result}")
+            logger.info(f"Initialize response: {initialize_result}")
             
             # Check for duplicate reference error
-            if (not charge_result.get("status") and 
-                charge_result.get("code") == "duplicate_reference"):
+            if (not initialize_result.get("status") and 
+                initialize_result.get("code") == "duplicate_reference"):
                 logger.warning(f"Duplicate reference on attempt {attempt + 1}, retrying...")
                 time.sleep(1)  # Wait longer between retries
                 continue
             
-            # Handle response
-            if charge_result.get("status"):
-                data = charge_result.get("data", {})
-                status = data.get("status", "")
+            # Handle initialization response
+            if initialize_result.get("status"):
+                data = initialize_result.get("data", {})
                 
-                logger.info(f"Payment status: {status}")
-                
-                if status == "send_otp":
-                    # Mobile money prompt sent successfully
+                # For mobile money, the initialize should trigger STK push directly
+                # Check if we got a success response indicating STK was sent
+                if data.get("status") == "send_otp" or data.get("status") == "pending":
                     display_text = data.get("display_text", "")
                     if not display_text:
                         display_text = f"Check your {network.upper()} phone for payment prompt"
@@ -266,24 +293,17 @@ def paystack_payment(msisdn, amount, network):
                         "reference": reference,
                         "display_text": display_text
                     }
-                elif status == "success":
+                elif data.get("status") == "success":
                     return {
                         "status": True,
                         "message": "Payment completed successfully", 
                         "reference": reference
                     }
-                elif status == "pending":
-                    return {
-                        "status": True,
-                        "message": "Payment is being processed",
-                        "reference": reference,
-                        "display_text": f"Check your {network.upper()} phone for payment prompt"
-                    }
-                elif status == "failed":
+                elif data.get("status") == "failed":
                     error_msg = data.get("gateway_response", "Payment failed")
                     return {"status": False, "message": error_msg}
                 else:
-                    # For any other status, assume it's processing
+                    # For any other status, assume STK was sent
                     return {
                         "status": True,
                         "message": "Payment initiated",
@@ -291,9 +311,9 @@ def paystack_payment(msisdn, amount, network):
                         "display_text": f"Check your {network.upper()} mobile money for payment prompt"
                     }
             else:
-                # Payment failed
-                error_msg = charge_result.get("message", "Payment failed")
-                logger.error(f"Payment failed: {charge_result}")
+                # Initialization failed
+                error_msg = initialize_result.get("message", "Payment initialization failed")
+                logger.error(f"Initialization failed: {initialize_result}")
                 
                 # Don't retry for certain errors
                 if any(word in error_msg.lower() for word in ["insufficient", "invalid", "declined"]):
@@ -347,6 +367,9 @@ def ussd_handler():
         state = session["state"]
         
         logger.info(f"USSD: {msisdn}, State: {state}, Input: '{input_text}'")
+        
+        # Log the initial message
+        log_to_airtable(msisdn, user_id, input_text, True, session['state'], session['session_id'])
         
         # Handle different states
         if state == "MAIN_MENU":
