@@ -1,6 +1,5 @@
 from flask import Flask, request, jsonify
 import os
-import redis
 import json
 import logging
 from datetime import datetime, timedelta
@@ -22,16 +21,6 @@ AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME", "Responses")
 AIRTABLE_ORDERS_TABLE = os.getenv("AIRTABLE_ORDERS_TABLE", "Orders")
 PAYSTACK_SECRET_KEY = os.getenv("PAYSTACK_SECRET_KEY")
 HELP_PHONE = os.getenv("HELP_PHONE", "0548118716")
-
-# Redis connection (optional)
-redis_client = None
-if REDIS_URL:
-    try:
-        redis_client = redis.from_url(REDIS_URL, decode_responses=True)
-        redis_client.ping()
-        logger.info("Redis connected")
-    except Exception as e:
-        logger.error(f"Redis failed: {e}")
 
 # Airtable setup (optional)
 airtable_table = None
