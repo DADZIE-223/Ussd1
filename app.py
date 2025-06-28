@@ -150,32 +150,102 @@ def create_order(session, msisdn):
     return order_id
 
 def paystack_payment(msisdn, amount, network):
-    """Process Paystack payment"""
+    """Process Paystack payment for Ghana Mobile Money"""
     if not PAYSTACK_SECRET_KEY:
         return {"status": False, "message": "Payment not configured"}
     
     import requests
-    url = "https://api.paystack.co/charge"
+    
+    # Map network names to Paystack providers
+    network_mapping = {
+        "mtn": "mtn",
+        "vodafone": "vod", 
+        "airteltigo": "tgo"
+    }
+    
+    provider = network_mapping.get(network.lower())
+    if not provider:
+        return {"status": False, "message": "Unsupported network"}
+    
+    # Initialize transaction first
+    init_url = "https://api.paystack.co/transaction/initialize"
     headers = {
         "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
         "Content-Type": "application/json"
     }
-    data = {
+    
+    init_data = {
         "amount": int(amount * 100),  # Convert to pesewas
         "email": f"{msisdn}@flapussd.com",
         "currency": "GHS",
-        "mobile_money": {
-            "phone": msisdn,
-            "provider": network.lower()
+        "channels": ["mobile_money"],
+        "metadata": {
+            "custom_fields": [
+                {
+                    "display_name": "Mobile Number",
+                    "variable_name": "mobile_number", 
+                    "value": msisdn
+                }
+            ]
         }
     }
     
     try:
-        r = requests.post(url, json=data, headers=headers, timeout=15)
-        return r.json()
+        # Step 1: Initialize transaction
+        logger.info(f"Initializing payment for {msisdn}, amount: GHS {amount}")
+        init_response = requests.post(init_url, json=init_data, headers=headers, timeout=15)
+        init_result = init_response.json()
+        
+        if not init_result.get("status"):
+            logger.error(f"Payment init failed: {init_result}")
+            return {"status": False, "message": "Payment initialization failed"}
+        
+        reference = init_result["data"]["reference"]
+        logger.info(f"Payment initialized with reference: {reference}")
+        
+        # Step 2: Charge mobile money
+        charge_url = "https://api.paystack.co/charge"
+        charge_data = {
+            "amount": int(amount * 100),
+            "email": f"{msisdn}@flapussd.com",
+            "currency": "GHS",
+            "reference": reference,
+            "mobile_money": {
+                "phone": msisdn,
+                "provider": provider
+            }
+        }
+        
+        logger.info(f"Charging mobile money: {provider} - {msisdn}")
+        charge_response = requests.post(charge_url, json=charge_data, headers=headers, timeout=30)
+        charge_result = charge_response.json()
+        
+        logger.info(f"Charge response: {charge_result}")
+        
+        if charge_result.get("status") and charge_result.get("data", {}).get("status") == "send_otp":
+            return {
+                "status": True, 
+                "message": "Payment prompt sent to your phone",
+                "reference": reference,
+                "display_text": charge_result.get("data", {}).get("display_text", "Check your phone for payment prompt")
+            }
+        elif charge_result.get("status"):
+            return {
+                "status": True,
+                "message": "Payment processed successfully", 
+                "reference": reference
+            }
+        else:
+            error_msg = charge_result.get("message", "Payment failed")
+            logger.error(f"Payment charge failed: {charge_result}")
+            return {"status": False, "message": error_msg}
+            
+    except requests.exceptions.Timeout:
+        logger.error("Payment request timed out")
+        return {"status": False, "message": "Payment request timed out"}
     except Exception as e:
         logger.error(f"Payment error: {e}")
-        return {"status": False, "message": str(e)}
+        return {"status": False, "message": f"Payment error: {str(e)}"}
 
 @app.route("/", methods=["POST"])
 @app.route("/ussd", methods=["POST"])
@@ -428,10 +498,14 @@ def handle_confirm(input_text, session, user_id, msisdn):
             if pay_resp.get("status"):
                 session["cart"] = []
                 session["state"] = "MAIN_MENU"
-                msg = f"Order #{order_id} created!\nPayment prompt sent. Thanks!"
+                
+                # Use the display text from Paystack if available
+                payment_msg = pay_resp.get("display_text", "Check your phone for payment prompt")
+                msg = f"Order #{order_id} created!\n{payment_msg}\nThanks!"
                 return ussd_response(user_id, msisdn, msg, False)
             else:
-                msg = f"Payment failed: {pay_resp.get('message', 'Try again')}\n1. Retry\n2. Cancel"
+                error_msg = pay_resp.get('message', 'Payment failed')
+                msg = f"Payment failed: {error_msg}\n1. Retry\n2. Cancel"
                 return ussd_response(user_id, msisdn, msg, True)
         else:
             # Cash payment
