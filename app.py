@@ -179,13 +179,13 @@ def create_order(session, msisdn):
     return order_id
 
 def paystack_payment(msisdn, amount, network):
-    """Process Paystack payment for Ghana Mobile Money - Direct Charge"""
+    """Process Paystack payment for Ghana Mobile Money - STK Push"""
     if not PAYSTACK_SECRET_KEY:
         return {"status": False, "message": "Payment not configured"}
     
     import requests
     
-    # Map network names to Paystack providers for Ghana
+    # Map network names to Paystack providers for Ghana STK Push
     network_mapping = {
         "mtn": "mtn",
         "vodafone": "vod", 
@@ -196,9 +196,27 @@ def paystack_payment(msisdn, amount, network):
     if not provider:
         return {"status": False, "message": "Unsupported network"}
     
+    # Format phone number correctly for each network
+    def format_phone_for_network(phone, net):
+        """Format phone number correctly for each network"""
+        clean_phone = re.sub(r'[^\d]', '', phone)
+        
+        if net == "mtn":
+            # MTN accepts 233XXXXXXXXX format
+            return clean_phone if clean_phone.startswith('233') else f"233{clean_phone}"
+        elif net == "vodafone":
+            # Vodafone might need different formatting
+            return clean_phone if clean_phone.startswith('233') else f"233{clean_phone}"
+        elif net == "airteltigo":
+            # AirtelTigo formatting
+            return clean_phone if clean_phone.startswith('233') else f"233{clean_phone}"
+        
+        return clean_phone
+    
+    formatted_phone = format_phone_for_network(msisdn, network.lower())
+    
     # Try up to 3 times with different references
     for attempt in range(3):
-        # Generate unique reference
         reference = generate_unique_reference()
         
         headers = {
@@ -207,23 +225,28 @@ def paystack_payment(msisdn, amount, network):
         }
         
         try:
-            # Direct mobile money charge - this should trigger STK push
+            # Use the Mobile Money specific endpoint for STK Push
             charge_url = "https://api.paystack.co/charge"
+            
+            # Updated payload specifically for STK Push
             charge_data = {
-                "amount": str(int(amount * 100)),  # Convert to pesewas as string
-                "email": f"{msisdn}@flapussd.com",
+                "amount": int(amount * 100),  # Convert to pesewas as integer
+                "email": f"{formatted_phone}@flapussd.com",
                 "currency": "GHS",
                 "reference": reference,
+                "channels": ["mobile_money"],  # Specify mobile money channel
                 "mobile_money": {
-                    "phone": msisdn,
+                    "phone": formatted_phone,
                     "provider": provider
                 },
+                # Add these specific fields for STK Push
+                "device_id": f"flap_{formatted_phone}",
                 "metadata": {
                     "custom_fields": [
                         {
                             "display_name": "Mobile Number",
                             "variable_name": "mobile_number", 
-                            "value": msisdn
+                            "value": formatted_phone
                         },
                         {
                             "display_name": "Network",
@@ -231,19 +254,19 @@ def paystack_payment(msisdn, amount, network):
                             "value": network.upper()
                         },
                         {
-                            "display_name": "Payment Method",
-                            "variable_name": "payment_method",
-                            "value": "mobile_money"
+                            "display_name": "Payment Type",
+                            "variable_name": "payment_type",
+                            "value": "stk_push"
                         }
                     ]
                 }
             }
             
-            logger.info(f"Attempt {attempt + 1}: Direct mobile money charge")
-            logger.info(f"Phone: {msisdn}, Provider: {provider}, Amount: GHS {amount}")
+            logger.info(f"Attempt {attempt + 1}: STK Push request")
+            logger.info(f"Phone: {formatted_phone}, Provider: {provider}, Amount: GHS {amount}")
             logger.info(f"Reference: {reference}")
             
-            charge_response = requests.post(charge_url, json=charge_data, headers=headers, timeout=30)
+            charge_response = requests.post(charge_url, json=charge_data, headers=headers, timeout=45)
             charge_result = charge_response.json()
             
             logger.info(f"Charge response: {charge_result}")
@@ -252,7 +275,7 @@ def paystack_payment(msisdn, amount, network):
             if (not charge_result.get("status") and 
                 charge_result.get("code") == "duplicate_reference"):
                 logger.warning(f"Duplicate reference on attempt {attempt + 1}, retrying...")
-                time.sleep(1)  # Wait longer between retries
+                time.sleep(2)
                 continue
             
             # Handle response
@@ -263,16 +286,24 @@ def paystack_payment(msisdn, amount, network):
                 logger.info(f"Payment status: {status}")
                 
                 if status == "send_otp":
-                    # Mobile money prompt sent successfully
+                    # STK Push sent successfully
                     display_text = data.get("display_text", "")
                     if not display_text:
-                        display_text = f"Check your {network.upper()} phone for payment prompt"
+                        display_text = f"Please check your {network.upper()} phone and approve the payment request"
                     
                     return {
                         "status": True, 
-                        "message": "Mobile money prompt sent",
+                        "message": "STK Push sent",
                         "reference": reference,
                         "display_text": display_text
+                    }
+                elif status == "send_pin":
+                    # Some networks require PIN
+                    return {
+                        "status": True,
+                        "message": "Enter your mobile money PIN",
+                        "reference": reference,
+                        "display_text": f"Enter your {network.upper()} mobile money PIN to complete payment"
                     }
                 elif status == "success":
                     return {
@@ -285,7 +316,7 @@ def paystack_payment(msisdn, amount, network):
                         "status": True,
                         "message": "Payment is being processed",
                         "reference": reference,
-                        "display_text": f"Check your {network.upper()} phone for payment prompt"
+                        "display_text": f"Please approve the payment request on your {network.upper()} phone"
                     }
                 elif status == "failed":
                     error_msg = data.get("gateway_response", "Payment failed")
@@ -296,12 +327,21 @@ def paystack_payment(msisdn, amount, network):
                         "status": True,
                         "message": "Payment initiated",
                         "reference": reference,
-                        "display_text": f"Check your {network.upper()} mobile money for payment prompt"
+                        "display_text": f"Please check your {network.upper()} phone and approve the payment request"
                     }
             else:
                 # Payment failed
                 error_msg = charge_result.get("message", "Payment failed")
                 logger.error(f"Payment failed: {charge_result}")
+                
+                # Check if it's a voucher code response (which we want to avoid)
+                if "voucher" in error_msg.lower() or "ussd" in error_msg.lower():
+                    logger.warning("Received voucher code response, retrying for STK push...")
+                    if attempt < 2:
+                        time.sleep(3)
+                        continue
+                    else:
+                        return {"status": False, "message": "STK Push not available, please try again"}
                 
                 # Don't retry for certain errors
                 if any(word in error_msg.lower() for word in ["insufficient", "invalid", "declined"]):
@@ -316,15 +356,107 @@ def paystack_payment(msisdn, amount, network):
             logger.error("Payment request timed out")
             if attempt == 2:  # Last attempt
                 return {"status": False, "message": "Payment request timed out"}
+            time.sleep(2)
             continue
         except Exception as e:
             logger.error(f"Payment error on attempt {attempt + 1}: {e}")
             if attempt == 2:  # Last attempt
                 return {"status": False, "message": f"Payment error: {str(e)}"}
+            time.sleep(2)
             continue
     
     # If all attempts failed
     return {"status": False, "message": "Payment failed after multiple attempts"}
+
+def paystack_payment_alternative(msisdn, amount, network):
+    """Alternative approach using Initialize Transaction then Mobile Money charge"""
+    if not PAYSTACK_SECRET_KEY:
+        return {"status": False, "message": "Payment not configured"}
+    
+    import requests
+    
+    network_mapping = {
+        "mtn": "mtn",
+        "vodafone": "vod", 
+        "airteltigo": "tgo"
+    }
+    
+    provider = network_mapping.get(network.lower())
+    if not provider:
+        return {"status": False, "message": "Unsupported network"}
+    
+    formatted_phone = re.sub(r'[^\d]', '', msisdn)
+    if not formatted_phone.startswith('233'):
+        formatted_phone = f"233{formatted_phone}"
+    
+    headers = {
+        "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    try:
+        # Step 1: Initialize transaction
+        reference = generate_unique_reference()
+        init_url = "https://api.paystack.co/transaction/initialize"
+        init_data = {
+            "amount": int(amount * 100),
+            "email": f"{formatted_phone}@flapussd.com",
+            "currency": "GHS",
+            "reference": reference,
+            "channels": ["mobile_money"],
+            "metadata": {
+                "phone": formatted_phone,
+                "network": network.upper()
+            }
+        }
+        
+        init_response = requests.post(init_url, json=init_data, headers=headers, timeout=30)
+        init_result = init_response.json()
+        
+        if not init_result.get("status"):
+            return {"status": False, "message": init_result.get("message", "Transaction initialization failed")}
+        
+        # Step 2: Charge with mobile money
+        charge_url = "https://api.paystack.co/charge"
+        charge_data = {
+            "amount": int(amount * 100),
+            "email": f"{formatted_phone}@flapussd.com",
+            "currency": "GHS",
+            "reference": reference,
+            "mobile_money": {
+                "phone": formatted_phone,
+                "provider": provider
+            }
+        }
+        
+        charge_response = requests.post(charge_url, json=charge_data, headers=headers, timeout=45)
+        charge_result = charge_response.json()
+        
+        logger.info(f"Alternative payment response: {charge_result}")
+        
+        if charge_result.get("status"):
+            data = charge_result.get("data", {})
+            status = data.get("status", "")
+            
+            if status in ["send_otp", "send_pin", "pending"]:
+                return {
+                    "status": True,
+                    "message": "STK Push sent",
+                    "reference": reference,
+                    "display_text": f"Please approve the payment request on your {network.upper()} phone"
+                }
+            elif status == "success":
+                return {
+                    "status": True,
+                    "message": "Payment completed successfully",
+                    "reference": reference
+                }
+        
+        return {"status": False, "message": charge_result.get("message", "Payment failed")}
+        
+    except Exception as e:
+        logger.error(f"Alternative payment error: {e}")
+        return {"status": False, "message": f"Payment error: {str(e)}"}
 
 @app.route("/", methods=["POST"])
 @app.route("/ussd", methods=["POST"])
@@ -579,12 +711,21 @@ def handle_confirm(input_text, session, user_id, msisdn):
         order_id = create_order(session, msisdn)
         
         if session["payment_method"] == "Mobile Money":
-            # Process payment
+            # Process payment - try main method first, then alternative if needed
             pay_resp = paystack_payment(
                 session.get("momo_number", msisdn),
                 session["total"],
                 session["network"]
             )
+            
+            # If main method fails with voucher, try alternative
+            if not pay_resp.get("status") and "voucher" in pay_resp.get("message", "").lower():
+                logger.info("Main payment method returned voucher, trying alternative...")
+                pay_resp = paystack_payment_alternative(
+                    session.get("momo_number", msisdn),
+                    session["total"],
+                    session["network"]
+                )
             
             if pay_resp.get("status"):
                 session["cart"] = []
@@ -653,7 +794,18 @@ def health_check():
         "airtable": "connected" if airtable_table else "disabled"
     })
 
+@app.route("/test-payment", methods=["POST"])
+def test_payment():
+    """Test payment endpoint for debugging"""
+    data = request.get_json()
+    phone = data.get("phone", "233241234567")
+    amount = data.get("amount", 10)
+    network = data.get("network", "mtn")
+    
+    result = paystack_payment(phone, amount, network)
+    return jsonify(result)
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     logger.info(f"Starting USSD Food Ordering on port {port}")
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=True)
