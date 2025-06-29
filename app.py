@@ -37,12 +37,13 @@ if AIRTABLE_PAT and AIRTABLE_BASE_ID:
         logger.error(f"Airtable failed: {e}")
 
 # Menu data
-CATEGORIES = ["Local Dishes", "Continental", "Drinks", "Snacks"]
+CATEGORIES = ["CHEF ONE", "Tovet", "Dine Inn - KT", "Founn", "Test"]
 MENUS = {
-    "Local Dishes": [("Jollof Rice", 30), ("Banku & Tilapia", 40), ("Fufu & Light Soup", 35)],
-    "Continental": [("Pizza", 50), ("Burger", 25), ("Pasta", 30)],
-    "Drinks": [("Coke", 5), ("Water", 2), ("Juice", 7)],
-    "Snacks": [("Meat Pie", 10), ("Chips", 8), ("Samosa", 12)],
+    "CHEF ONE": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35)],
+    "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 30)],
+    "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 30)],
+    "Founn": [("Banku & Tilapia", 35), ("FriedRice & Chicken", 35), ("Jollof & Chicken", 35)],
+    "Test": [("Coconut",0.2), ("Kivo",0.1)],
 }
 
 # In-memory session storage
