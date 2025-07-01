@@ -6,8 +6,8 @@ from datetime import datetime
 from pyairtable import Api
 import re
 import uuid
-import urllib
-import urllib2  # Use urllib2 as per BulkSMS Ghana documentation
+import urllib.request
+import urllib.parse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -25,37 +25,38 @@ SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "0204186509")
 
 # Bulk SMS Ghana configuration
 BULK_SMS_API_KEY = os.getenv("BULK_SMS_API_KEY")
-BULK_SMS_SENDER_ID = os.getenv("BULK_SMS_SENDER_ID", "FLAP")
+BULK_SMS_SENDER_ID = os.getenv("BULK_SMS_SENDER_ID", "FLAPDish")
 
 def send_sms_ghana(phone_number, message):
-    """Send SMS to a user using Bulk SMS Ghana API with documentation's logic."""
+    """Send SMS to a user using Bulk SMS Ghana API for Python 3."""
     params = {
         'key': BULK_SMS_API_KEY,
         'to': phone_number,
         'msg': message,
         'sender_id': BULK_SMS_SENDER_ID
     }
-    url = 'http://clientlogin.bulksmsgh.com/smsapi?' + urllib.urlencode(params)
+    url = 'http://clientlogin.bulksmsgh.com/smsapi?' + urllib.parse.urlencode(params)
     try:
-        content = urllib2.urlopen(url).read()
-        code = content.strip()
-        if code == '1000':
-            logger.info("Message successfully sent")
-            return True
-        elif code == '1002':
-            logger.error("Message not sent")
-        elif code == '1003':
-            logger.error("Your balance is not enough")
-        elif code == '1004':
-            logger.error("Invalid API Key")
-        elif code == '1005':
-            logger.error("Phone number not valid")
-        elif code == '1006':
-            logger.error("Invalid sender id")
-        elif code == '1008':
-            logger.error("Empty message")
-        else:
-            logger.error("Unknown SMS API response: %s", code)
+        with urllib.request.urlopen(url) as response:
+            content = response.read().decode('utf-8')
+            code = content.strip()
+            if code == '1000':
+                logger.info("Message successfully sent")
+                return True
+            elif code == '1002':
+                logger.error("Message not sent")
+            elif code == '1003':
+                logger.error("Your balance is not enough")
+            elif code == '1004':
+                logger.error("Invalid API Key")
+            elif code == '1005':
+                logger.error("Phone number not valid")
+            elif code == '1006':
+                logger.error("Invalid sender id")
+            elif code == '1008':
+                logger.error("Empty message")
+            else:
+                logger.error("Unknown SMS API response: %s", code)
     except Exception as e:
         logger.error(f"SMS sending failed: {e}")
     return False
