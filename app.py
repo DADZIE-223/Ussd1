@@ -42,7 +42,7 @@ MENUS = {
     "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
     "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 35)],
     "Founn": [("Banku & Tilapia", 35), ("FriedRice & Chicken", 35), ("Jollof & Chicken", 35)],
-    "KFC - Tarkwa": [(Soon!)],
+    "KFC - Tarkwa": [("Soon!")],
 }
 
 # In-memory session storage
