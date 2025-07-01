@@ -28,7 +28,6 @@ BULK_SMS_API_KEY = os.getenv("BULK_SMS_API_KEY")
 BULK_SMS_SENDER_ID = os.getenv("BULK_SMS_SENDER_ID", "FLAPDish")
 
 def send_sms_ghana(phone_number, message):
-    """Send SMS to a user using Bulk SMS Ghana API for Python 3."""
     params = {
         'key': BULK_SMS_API_KEY,
         'to': phone_number,
@@ -74,25 +73,21 @@ if AIRTABLE_PAT and AIRTABLE_BASE_ID:
     except Exception as e:
         logger.error(f"Airtable failed: {e}")
 
-# Menu data
 CATEGORIES = ["Chef One", "Tovet", "Dine Inn - KT", "Founn", "KFC - Tarkwa"]
 MENUS = {
     "Chef One": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35)],
     "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
     "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 35)],
     "Founn": [("Banku & Tilapia", 35), ("FriedRice & Chicken", 35), ("Jollof & Chicken", 35)],
-    "KFC - Tarkwa": []  # No menu; will show "coming soon"
+    "KFC - Tarkwa": []
 }
 
-# In-memory session storage
 memory_sessions = {}
 
 def get_airtable_datetime():
-    """Get datetime in Airtable-compatible format"""
     return datetime.now().strftime("%Y-%m-%d %H:%M")
 
 def validate_phone_number(phone):
-    """Validate phone number - must start with 233"""
     if not phone:
         return False
     clean_phone = re.sub(r'[^\d]', '', phone)
@@ -100,13 +95,11 @@ def validate_phone_number(phone):
     return bool(re.match(pattern, clean_phone))
 
 def sanitize_input(text):
-    """Clean user input"""
     if not text:
         return ""
     return re.sub(r'[<>"\']', '', text.strip())[:200]
 
 def get_session(msisdn):
-    """Get user session from memory"""
     if msisdn not in memory_sessions:
         memory_sessions[msisdn] = {
             "state": "MAIN_MENU",
@@ -122,11 +115,9 @@ def get_session(msisdn):
     return memory_sessions[msisdn]
 
 def save_session(msisdn, session):
-    """Save user session to memory"""
     memory_sessions[msisdn] = session
 
 def log_to_airtable(msisdn, userid, message, continue_session, state=None, session_id=None):
-    """Log to Airtable with multiple message columns"""
     if not airtable_table:
         return
     try:
@@ -144,17 +135,27 @@ def log_to_airtable(msisdn, userid, message, continue_session, state=None, sessi
         logger.error(f"Airtable log error: {e}")
 
 def create_order(session, msisdn, order_type="regular"):
-    """Create order record"""
     order_id = str(uuid.uuid4())[:8].upper()
     if order_type == "custom":
-        items = [{"name": "Custom Order", "description": session["custom_order"], "price": 30, "quantity": 1}]
+        items = [{
+            "name": "Custom Order",
+            "description": session["custom_order"],
+            "price": 30,
+            "quantity": 1,
+            "category": "Custom"
+        }]
         total = 30
     else:
         items = []
         total_items = 0
         items_total = 0
-        for item, qty in session["cart"]:
-            items.append({"name": item[0], "price": item[1], "quantity": qty})
+        for item, qty, category in session["cart"]:
+            items.append({
+                "name": item[0],
+                "price": item[1],
+                "quantity": qty,
+                "category": category
+            })
             total_items += qty
             items_total += item[1] * qty
         delivery_fee = 15 + (total_items - 1) * 5 if total_items > 0 else 0
@@ -187,7 +188,6 @@ def create_order(session, msisdn, order_type="regular"):
 @app.route("/", methods=["POST"])
 @app.route("/ussd", methods=["POST"])
 def ussd_handler():
-    """Main USSD handler"""
     try:
         data = request.get_json()
         if not data:
@@ -208,7 +208,6 @@ def ussd_handler():
         state = session["state"]
         logger.info(f"USSD: {msisdn}, State: {state}, Input: '{input_text}'")
         log_to_airtable(msisdn, user_id, input_text, True, session['state'], session.get('session_id'))
-        # Handle different states
         if state == "MAIN_MENU":
             response = handle_main_menu(input_text, session, user_id, msisdn)
         elif state == "CATEGORY":
@@ -237,7 +236,6 @@ def ussd_handler():
         return jsonify({"error": "Internal error"}), 500
 
 def handle_main_menu(input_text, session, user_id, msisdn):
-    """Handle main menu"""
     msg = "Welcome to FLAP Dish!\n1. Order Food\n2. Custom Order\n3. My Orders\n4. Help\n0. Exit"
     if input_text == "" or input_text.startswith("*"):
         pass
@@ -269,18 +267,15 @@ def handle_main_menu(input_text, session, user_id, msisdn):
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_category(input_text, session, user_id, msisdn):
-    """Handle category selection including KFC special logic"""
     if input_text == "#":
         session["state"] = "MAIN_MENU"
         return handle_main_menu("", session, user_id, msisdn)
     try:
-        # Check if user selected a valid category
         idxs = [str(i+1) for i in range(len(CATEGORIES))]
         if input_text in idxs:
             cat = CATEGORIES[int(input_text)-1]
             session["selected_category"] = cat
             if cat == "KFC - Tarkwa":
-                # Special logic: show coming soon and return to menu
                 session["state"] = "MAIN_MENU"
                 msg = "KFC - Tarkwa: Coming soon!"
                 return ussd_response(user_id, msisdn, msg, True)
@@ -297,7 +292,6 @@ def handle_category(input_text, session, user_id, msisdn):
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_item(input_text, session, user_id, msisdn):
-    """Handle item selection"""
     if input_text == "#":
         session["state"] = "CATEGORY"
         return handle_category("", session, user_id, msisdn)
@@ -317,12 +311,12 @@ def handle_item(input_text, session, user_id, msisdn):
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_quantity(input_text, session, user_id, msisdn):
-    """Handle quantity input"""
     item = session["selected_item"]
+    category = session.get("selected_category", "Unknown")
     try:
         qty = int(input_text)
         if 1 <= qty <= 20:
-            session["cart"].append((item, qty))
+            session["cart"].append((item, qty, category))
             session["state"] = "CART"
             msg = f"{qty} x {item[0]} added to cart.\n1. Add more\n2. Checkout\n#. Cancel"
             return ussd_response(user_id, msisdn, msg, True)
@@ -332,7 +326,6 @@ def handle_quantity(input_text, session, user_id, msisdn):
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_cart(input_text, session, user_id, msisdn):
-    """Handle cart operations"""
     if input_text == "1":
         session["state"] = "CATEGORY"
         return handle_category("", session, user_id, msisdn)
@@ -348,7 +341,6 @@ def handle_cart(input_text, session, user_id, msisdn):
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_delivery(input_text, session, user_id, msisdn):
-    """Handle delivery location"""
     if input_text and len(input_text.strip()) >= 3:
         session["delivery_location"] = input_text
         if session.get("custom_order"):
@@ -361,7 +353,6 @@ def handle_delivery(input_text, session, user_id, msisdn):
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_confirm(input_text, session, user_id, msisdn):
-    """Handle regular order confirmation"""
     if input_text == "2":
         session["cart"] = []
         session["state"] = "MAIN_MENU"
@@ -377,7 +368,6 @@ def handle_confirm(input_text, session, user_id, msisdn):
     return show_confirmation(session, user_id, msisdn)
 
 def handle_custom_order(input_text, session, user_id, msisdn):
-    """Handle custom order input"""
     if input_text == "#":
         session["state"] = "MAIN_MENU"
         return handle_main_menu("", session, user_id, msisdn)
@@ -390,7 +380,6 @@ def handle_custom_order(input_text, session, user_id, msisdn):
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_custom_confirm(input_text, session, user_id, msisdn):
-    """Handle custom order confirmation"""
     if input_text == "2":
         session["custom_order"] = ""
         session["state"] = "MAIN_MENU"
@@ -406,12 +395,11 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
     return show_custom_confirmation(session, user_id, msisdn)
 
 def show_confirmation(session, user_id, msisdn):
-    """Show regular order confirmation"""
-    lines = [f"{qty} x {item[0]} - GHS {item[1]*qty}" for item, qty in session["cart"]]
-    item_count = sum(qty for item, qty in session["cart"])
+    lines = [f"{qty} x {item[0]} ({cat}) - GHS {item[1]*qty}" for item, qty, cat in session["cart"]]
+    item_count = sum(qty for item, qty, cat in session["cart"])
     delivery_fee = 15 + (item_count - 1) * 5 if item_count > 0 else 0
     extra_charge = 2
-    items_total = sum(item[1]*qty for item, qty in session["cart"])
+    items_total = sum(item[1]*qty for item, qty, cat in session["cart"])
     total = items_total + delivery_fee + extra_charge
     session["total"] = total
     msg = (
@@ -424,7 +412,6 @@ def show_confirmation(session, user_id, msisdn):
     return ussd_response(user_id, msisdn, msg, True)
 
 def show_custom_confirmation(session, user_id, msisdn):
-    """Show custom order confirmation"""
     msg = (
         "Custom Order Summary:\n" +
         f"Request: {session['custom_order'][:50]}..." +
@@ -435,7 +422,6 @@ def show_custom_confirmation(session, user_id, msisdn):
     return ussd_response(user_id, msisdn, msg, True)
 
 def ussd_response(userid, msisdn, msg, continue_session=True):
-    """Generate USSD response"""
     truncated_msg = msg[:160]
     log_to_airtable(msisdn, userid, truncated_msg, continue_session)
     logger.info(f"Response to {msisdn}: {truncated_msg[:50]}...")
@@ -448,7 +434,6 @@ def ussd_response(userid, msisdn, msg, continue_session=True):
 
 @app.route("/health", methods=["GET"])
 def health_check():
-    """Health check"""
     return jsonify({
         "status": "healthy",
         "timestamp": get_airtable_datetime(),
