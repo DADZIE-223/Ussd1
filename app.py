@@ -25,7 +25,7 @@ SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "0204186509")
 
 # Bulk SMS Ghana configuration
 BULK_SMS_API_KEY = os.getenv("BULK_SMS_API_KEY")
-BULK_SMS_SENDER_ID = os.getenv("BULK_SMS_SENDER_ID", "FLAPDish")
+BULK_SMS_SENDER_ID = os.getenv("BULK_SMS_SENDER_ID", "FLAP")
 
 def send_sms_ghana(phone_number, message):
     params = {
