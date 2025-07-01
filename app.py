@@ -36,13 +36,13 @@ if AIRTABLE_PAT and AIRTABLE_BASE_ID:
         logger.error(f"Airtable failed: {e}")
 
 # Menu data
-CATEGORIES = ["Chef One", "Tovet", "Dine Inn - KT", "Founn", "Test"]
+CATEGORIES = ["Chef One", "Tovet", "Dine Inn - KT", "Founn", "KFC - Tarkwa"]
 MENUS = {
     "Chef One": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35)],
     "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
     "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 35)],
     "Founn": [("Banku & Tilapia", 35), ("FriedRice & Chicken", 35), ("Jollof & Chicken", 35)],
-    "Test": [("Coconut",0.2), ("Kivo",0.1)],
+    "KFC - Tarkwa": [(Soon!)],
 }
 
 # In-memory session storage
@@ -240,7 +240,7 @@ def handle_main_menu(input_text, session, user_id, msisdn):
         else:
             msg = "No orders yet.\n#. Back"
     elif input_text == "4":
-        msg = f"Call {HELP_PHONE} for help.\n#. Back"
+        msg = f"Call {SUPPORT_PHONE} for help.\n#. Back"
     elif input_text == "0":
         msg = "Thank you for using FLAP Dish!"
         return ussd_response(user_id, msisdn, msg, False)
