@@ -21,6 +21,7 @@ AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME", "Responses")
 AIRTABLE_ORDERS_TABLE = os.getenv("AIRTABLE_ORDERS_TABLE", "Orders")
 HELP_PHONE = os.getenv("HELP_PHONE", "0548118716")
+SUPPORT_PHONE = os.get.env("SUPPORT_PHONE", "0204186509")
 
 # Airtable setup (optional) - Using new API
 airtable_table = None
