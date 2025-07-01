@@ -398,7 +398,7 @@ def show_confirmation(session, user_id, msisdn):
     lines = [f"{qty} x {item[0]} ({cat}) - GHS {item[1]*qty}" for item, qty, cat in session["cart"]]
     item_count = sum(qty for item, qty, cat in session["cart"])
     delivery_fee = 15 + (item_count - 1) * 5 if item_count > 0 else 0
-    extra_charge = 2
+    extra_charge = 3.5
     items_total = sum(item[1]*qty for item, qty, cat in session["cart"])
     total = items_total + delivery_fee + extra_charge
     session["total"] = total
