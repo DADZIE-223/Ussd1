@@ -39,8 +39,8 @@ if AIRTABLE_PAT and AIRTABLE_BASE_ID:
 CATEGORIES = ["Chef One", "Tovet", "Dine Inn - KT", "Founn", "Test"]
 MENUS = {
     "Chef One": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35)],
-    "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 30)],
-    "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 30)],
+    "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
+    "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 35)],
     "Founn": [("Banku & Tilapia", 35), ("FriedRice & Chicken", 35), ("Jollof & Chicken", 35)],
     "Test": [("Coconut",0.2), ("Kivo",0.1)],
 }
@@ -130,7 +130,7 @@ def create_order(session, msisdn, order_type="regular"):
             items_total += item[1] * qty
         
         delivery_fee = 15 + (total_items - 1) * 5 if total_items > 0 else 0
-        extra_charge = 2
+        extra_charge = 3.5
         total = items_total + delivery_fee + extra_charge
     
     if airtable_orders:
