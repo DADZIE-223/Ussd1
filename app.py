@@ -368,7 +368,7 @@ def handle_confirm(input_text, session, user_id, msisdn):
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
         order_id, total = create_order(session, msisdn, "regular")
-        sms_msg = f"Your FLAP Dish order #{order_id} has been received! Please pay GHS {total} to process your order. Thank you!"
+        sms_msg = f"Your order #{order_id} has been received! Please dail *415*1738# and pay GHS {total} to process your order. Thank you!"
         send_sms_ghana(msisdn, sms_msg)
         session["cart"] = []
         session["state"] = "MAIN_MENU"
@@ -397,7 +397,7 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
         order_id, total = create_order(session, msisdn, "custom")
-        sms_msg = f"Your FLAP Dish custom order #{order_id} has been received! Please pay GHS {total} to process your order. Thank you!"
+        sms_msg = f"Your FLAP Dish custom order #{order_id} has been received! Please dail *415*1738# and pay GHS {total} to process your order. Thank you!"
         send_sms_ghana(msisdn, sms_msg)
         session["custom_order"] = ""
         session["state"] = "MAIN_MENU"
