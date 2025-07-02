@@ -140,11 +140,11 @@ def create_order(session, msisdn, order_type="regular"):
         items = [{
             "name": "Custom Order",
             "description": session["custom_order"],
-            "price": 30,
+            "price": 35,
             "quantity": 1,
             "category": "Custom"
         }]
-        total = 30
+        total = 35
     else:
         items = []
         total_items = 0
@@ -397,8 +397,8 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
 def show_confirmation(session, user_id, msisdn):
     lines = [f"{qty} x {item[0]} ({cat}) - GHS {item[1]*qty}" for item, qty, cat in session["cart"]]
     item_count = sum(qty for item, qty, cat in session["cart"])
-    delivery_fee = 15 + (item_count - 1) * 5 if item_count > 0 else 0
-    extra_charge = 3.5
+    delivery_fee = 18 + (item_count - 1) * 5 if item_count > 0 else 0
+    extra_charge = 4
     items_total = sum(item[1]*qty for item, qty, cat in session["cart"])
     total = items_total + delivery_fee + extra_charge
     session["total"] = total
@@ -416,7 +416,7 @@ def show_custom_confirmation(session, user_id, msisdn):
         "Custom Order Summary:\n" +
         f"Request: {session['custom_order'][:50]}..." +
         f"\nLocation: {session['delivery_location']}" +
-        f"\nDelivery Fee: GHS 30" +
+        f"\nDelivery Fee: GHS 35" +
         f"\n\n1. Confirm\n2. Cancel"
     )
     return ussd_response(user_id, msisdn, msg, True)
