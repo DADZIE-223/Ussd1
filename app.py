@@ -158,8 +158,8 @@ def create_order(session, msisdn, order_type="regular"):
             })
             total_items += qty
             items_total += item[1] * qty
-        delivery_fee = 15 + (total_items - 1) * 5 if total_items > 0 else 0
-        extra_charge = 3.5
+        delivery_fee = 18 + (total_items - 1) * 5 if total_items > 0 else 0
+        extra_charge = 4
         total = items_total + delivery_fee + extra_charge
 
     if airtable_orders:
