@@ -141,11 +141,11 @@ def create_order(session, msisdn, order_type="regular"):
         items = [{
             "name": "Custom Order",
             "description": session["custom_order"],
-            "price": 25,
+            "price": 30,
             "quantity": 1,
             "category": "Custom"
         }]
-        total = 25
+        total = 30
     else:
         items = []
         total_items = 0
@@ -159,8 +159,8 @@ def create_order(session, msisdn, order_type="regular"):
             })
             total_items += qty
             items_total += item[1] * qty
-        delivery_fee = 10 + (total_items - 1) * 5 if total_items > 0 else 0
-        extra_charge = 3
+        delivery_fee = 15 + (total_items - 1) * 5 if total_items > 0 else 0
+        extra_charge = 4
         total = items_total + delivery_fee + extra_charge
 
     if airtable_orders:
@@ -391,15 +391,15 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
         send_sms_ghana(msisdn, sms_msg)
         session["custom_order"] = ""
         session["state"] = "MAIN_MENU"
-        msg = f"Custom Order #{order_id} created!\n\nPlease dial *415*1738# and pay GHS 25 for delivery.\n\nThank you!"
+        msg = f"Custom Order #{order_id} created!\n\nPlease dial *415*1738# and pay GHS 30 for delivery.\n\nThank you!"
         return ussd_response(user_id, msisdn, msg, False)
     return show_custom_confirmation(session, user_id, msisdn)
 
 def show_confirmation(session, user_id, msisdn):
     lines = [f"{qty} x {item[0]} ({cat}) - GHS {item[1]*qty}" for item, qty, cat in session["cart"]]
     item_count = sum(qty for item, qty, cat in session["cart"])
-    delivery_fee = 10 + (item_count - 1) * 5 if item_count > 0 else 0
-    extra_charge = 3
+    delivery_fee = 15 + (item_count - 1) * 5 if item_count > 0 else 0
+    extra_charge = 4
     items_total = sum(item[1]*qty for item, qty, cat in session["cart"])
     total = items_total + delivery_fee + extra_charge
     session["total"] = total
@@ -417,7 +417,7 @@ def show_custom_confirmation(session, user_id, msisdn):
         "Custom Order Summary:\n" +
         f"Request: {session['custom_order'][:50]}..." +
         f"\nLocation: {session['delivery_location']}" +
-        f"\nDelivery Fee: GHS 25" +
+        f"\nDelivery Fee: GHS 30" +
         f"\n\n1. Confirm\n2. Cancel"
     )
     return ussd_response(user_id, msisdn, msg, True)
