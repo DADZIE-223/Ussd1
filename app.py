@@ -73,9 +73,10 @@ if AIRTABLE_PAT and AIRTABLE_BASE_ID:
     except Exception as e:
         logger.error(f"Airtable failed: {e}")
 
-CATEGORIES = ["Chef One", "Tovet", "Dine Inn - KT", "Founn", "KFC - Tarkwa"]
+CATEGORIES = ["Chef One", "Eno's Kitchen", "Tovet", "Dine Inn - KT", "Founn", "KFC - Tarkwa"]
 MENUS = {
     "Chef One": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35)],
+    "Eno's Kitchen": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("FriedRice & Chicken", 35)],
     "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
     "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 35)],
     "Founn": [("Banku & Tilapia", 35), ("FriedRice & Chicken", 35), ("Jollof & Chicken", 35)],
