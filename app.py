@@ -267,17 +267,17 @@ def handle_main_menu(input_text, session, user_id, msisdn):
         msg = f"Select Vendor:\n{cat_menu}\n#. Back\n\nEnter option:"
     elif input_text == "2":
         session["state"] = "CUSTOM_ORDER"
-        msg = "Enter custom order details (what you want prepared):\n#. Back"
+        msg = "Enter custom order details (what you want fulfilled):\n#. Back"
     elif input_text == "3":
         orders = session.get("order_history", [])
         if orders:
             recent = orders[-3:]
             order_lines = [f"{o['order_id']}: GHS {o['total']} ({o.get('order_type', 'regular')})" for o in recent]
-            msg = "Recent Orders:\n" + "\n".join(order_lines) + "\n#. Back\n\nEnter option:"
+            msg = "Recent Orders:\n" + "\n".join(order_lines) + "\n#. Back:"
         else:
-            msg = "No orders yet.\n#. Back\n\nEnter option:"
+            msg = "No orders yet.\n#. Back:"
     elif input_text == "4":
-        msg = f"Call {SUPPORT_PHONE} for help.\n#. Back\n\nEnter option:"
+        msg = f"Call {SUPPORT_PHONE} for help.\n#. Back:"
     elif input_text == "0":
         msg = "Thank you for using FLAP Dish!"
         return ussd_response(user_id, msisdn, msg, False)
@@ -296,10 +296,10 @@ def handle_category(input_text, session, user_id, msisdn):
         session["state"] = "ITEM"
         menu = MENUS[cat]
         menu_str = "\n".join([f"{i+1}. {m[0]} - GHS {m[1]}" for i, m in enumerate(menu)])
-        msg = f"{cat} Menu:\n{menu_str}\n#. Back\n\nEnter option:"
+        msg = f"{cat} Menu:\n{menu_str}\n#. Back:"
         return ussd_response(user_id, msisdn, msg, True)
     cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
-    msg = f"Select Vendor:\n{cat_menu}\n#. Back\n\nEnter option:"
+    msg = f"Select Vendor:\n{cat_menu}\n#. Back:"
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_item(input_text, session, user_id, msisdn):
@@ -316,7 +316,7 @@ def handle_item(input_text, session, user_id, msisdn):
         msg = f"{item[0]} selected.\nEnter quantity (1-20):\n#. Back"
         return ussd_response(user_id, msisdn, msg, True)
     menu_str = "\n".join([f"{i+1}. {m[0]} - GHS {m[1]}" for i, m in enumerate(menu)])
-    msg = f"{cat} Menu:\n{menu_str}\n#. Back\n\nEnter option:"
+    msg = f"{cat} Menu:\n{menu_str}\n#. Back:"
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_quantity(input_text, session, user_id, msisdn):
@@ -330,7 +330,7 @@ def handle_quantity(input_text, session, user_id, msisdn):
         if 1 <= qty <= 20:
             session["cart"].append((item, qty, category))
             session["state"] = "CART"
-            msg = f"{qty} x {item[0]} added to cart.\n1. Add more\n2. Checkout\n#. Cancel\n\nEnter option:"
+            msg = f"{qty} x {item[0]} added to cart.\n1. Add more\n2. Checkout\n#. Cancel:"
             return ussd_response(user_id, msisdn, msg, True)
     except ValueError:
         pass
@@ -349,7 +349,7 @@ def handle_cart(input_text, session, user_id, msisdn):
         session["cart"] = []
         session["state"] = "MAIN_MENU"
         return handle_main_menu("", session, user_id, msisdn)
-    msg = "1. Add more\n2. Checkout\n#. Cancel\n\nEnter option:"
+    msg = "1. Add more\n2. Checkout\n#. Cancel:"
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_delivery(input_text, session, user_id, msisdn):
@@ -383,9 +383,9 @@ def show_confirmation(session, user_id, msisdn):
         lines.append(f"+{len(cart)-2} more")
     items_line = ", ".join(lines)
     msg = (
-        f"{items_line}\nDeliv:{delivery_fee} Svc:{extra_charge}\n"
-        f"Loc:{session['delivery_location']}\nTot:{total}\n"
-        "Discount code?\n1. Yes\n2. No\n\nEnter option:"
+        f"{items_line}\nDelivery:{delivery_fee} service:{extra_charge}\n"
+        f"Location:{session['delivery_location']}\nTotal:{total}\n"
+        "Discount code?\n1. Yes\n2. No:"
     )
     session["state"] = "DISCOUNT_ASK"
     return ussd_response(user_id, msisdn, msg, True)
@@ -401,7 +401,7 @@ def handle_discount_ask(input_text, session, user_id, msisdn):
         session["state"] = "CONFIRM"
         return show_final_confirmation(session, user_id, msisdn)
     else:
-        msg = "Discount code?\n1. Yes\n2. No\n\nEnter option:"
+        msg = "Discount code?\n1. Yes\n2. No"
         return ussd_response(user_id, msisdn, msg, True)
 
 def handle_discount_enter(input_text, session, user_id, msisdn):
@@ -451,7 +451,7 @@ def show_final_confirmation(session, user_id, msisdn, discount_applied_msg=None)
         msg += f" Disc:-{session['discount_amount']}"
     msg += (
         f"\nLoc:{session['delivery_location']}\nTot:{total}\n"
-        "1. Confirm\n2. Cancel\n\nEnter option:"
+        "1. Confirm\n2. Cancel"
     )
     return ussd_response(user_id, msisdn, msg, True)
 
@@ -506,7 +506,7 @@ def show_custom_confirmation(session, user_id, msisdn):
     msg = (
         f"Custom Order:\n{summary}...\n"
         f"Loc:{session['delivery_location']}\nDeliv:30\n"
-        "1. Confirm\n2. Cancel\n\nEnter option:"
+        "1. Confirm\n2. Cancel"
     )
     return ussd_response(user_id, msisdn, msg, True)
 
