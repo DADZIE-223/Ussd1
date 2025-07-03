@@ -93,15 +93,14 @@ MENUS = {
     "Pizzaman": [("Triple b-double Pizza", 290), ("Dukeman-small Pizza", 150), ("Chibella-double Pizza", 290)]
 }
 
-# Special delivery prices for KFC - Tarkwa
 KFC_TARKWA_DELIVERY_PRICES = {
     "tarkwa central": 20,
     "tna": 20,
     "university": 20,
     "aboso": 18,
-    "other": 30  # fallback/default for other locations
+    "other": 30
 }
-DEFAULT_DELIVERY_FEE = 15  # default for all others
+DEFAULT_DELIVERY_FEE = 15
 
 memory_sessions = {}
 
@@ -386,13 +385,11 @@ def handle_delivery(input_text, session, user_id, msisdn):
             session["state"] = "CUSTOM_CONFIRM"
             return show_custom_confirmation(session, user_id, msisdn)
         else:
-            # Instead of confirmation, ask about discount code
             return show_confirmation(session, user_id, msisdn)
     msg = "Enter delivery location (min 3 chars):"
     return ussd_response(user_id, msisdn, msg, True)
 
 def show_confirmation(session, user_id, msisdn):
-    lines = [f"{qty} x {item[0]} ({cat}) - GHS {item[1]*qty}" for item, qty, cat in session["cart"]]
     item_count = sum(qty for item, qty, cat in session["cart"])
     delivery_fee = get_delivery_fee(session)
     extra_charge = 4
@@ -400,12 +397,11 @@ def show_confirmation(session, user_id, msisdn):
     total = items_total + delivery_fee + extra_charge
     session["total"] = total
     msg = (
-        "Order Summary:\n" + "\n".join(lines) +
-        f"\nDelivery: GHS {delivery_fee}" +
-        f"\nService: GHS {extra_charge}" +
-        f"\nLocation: {session['delivery_location']}" +
-        f"\nTotal: GHS {total}\n\n"
-        "Do you have a discount code?\n1. Yes\n2. No"
+        f"Items: {item_count}\n"
+        f"Deliv: GHS {delivery_fee} | Svc: GHS {extra_charge}\n"
+        f"Loc: {session['delivery_location']}\n"
+        f"Total: GHS {total}\n"
+        "Discount code?\n1.Yes 2.No"
     )
     session["state"] = "DISCOUNT_ASK"
     return ussd_response(user_id, msisdn, msg, True)
@@ -421,18 +417,23 @@ def handle_discount_ask(input_text, session, user_id, msisdn):
         session["state"] = "CONFIRM"
         return show_final_confirmation(session, user_id, msisdn)
     else:
-        msg = "Do you have a discount code?\n1. Yes\n2. No"
+        msg = "Discount code?\n1. Yes 2. No"
         return ussd_response(user_id, msisdn, msg, True)
 
 def handle_discount_enter(input_text, session, user_id, msisdn):
     code = input_text.strip().upper()
-    # Example: Only code FLAP10 is valid for 10 GHS off
     if code == "FLAP10":
         session["discount_code"] = code
         session["discount_amount"] = 10
         msg = "Discount applied: GHS 10 off!"
-        session["state"] = "CONFIRM"
-        return show_final_confirmation(session, user_id, msisdn, discount_applied_msg=msg)
+    elif code == "VOU":
+        session["discount_code"] = code
+        session["discount_amount"] = 5
+        msg = "Discount applied: GHS 5 off!"
+    elif code == "DNA":
+        session["discount_code"] = code
+        session["discount_amount"] = 12
+        msg = "Discount applied: GHS 12 off!"
     elif code == "0":
         session["discount_code"] = None
         session["discount_amount"] = 0
@@ -441,6 +442,9 @@ def handle_discount_enter(input_text, session, user_id, msisdn):
     else:
         msg = "Invalid code. Try again or enter 0 to skip."
         return ussd_response(user_id, msisdn, msg, True)
+
+    session["state"] = "CONFIRM"
+    return show_final_confirmation(session, user_id, msisdn, discount_applied_msg=msg)
 
 def show_final_confirmation(session, user_id, msisdn, discount_applied_msg=None):
     lines = [f"{qty} x {item[0]} ({cat}) - GHS {item[1]*qty}" for item, qty, cat in session["cart"]]
