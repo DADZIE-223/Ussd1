@@ -279,7 +279,7 @@ def handle_main_menu(input_text, session, user_id, msisdn):
     elif input_text == "4":
         msg = f"Call {SUPPORT_PHONE} for help.\n#. Back:"
     elif input_text == "5":
-        msg = "Coming Soon!"."\n#. Back:"
+        msg = "Coming Soon! \n#. Back:"
     elif input_text == "0":
         msg = "Thank you for using FLAP Dish!"
         return ussd_response(user_id, msisdn, msg, False)
