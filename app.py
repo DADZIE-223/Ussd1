@@ -89,17 +89,17 @@ MENUS = {
     "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
     "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 35)],
     "Founn": [("Banku & Tilapia", 35), ("FriedRice & Chicken", 35), ("Jollof & Chicken", 35)],
-    "KFC - Tarkwa": [("Zinger Burger Meal", 55), ("Twister Meal", 50), ("Streetwise 2", 48)],
-    "Pizzaman": [("Pepperoni Pizza", 60), ("Margherita Pizza", 50), ("Chicken Wings", 45)]
+    "KFC - Tarkwa": [("15 Pieces Chicken", 427), ("Streetwise 2-Chips", 88), ("Streetwise 3-Rice", 112)],
+    "Pizzaman": [("Triple b-double Pizza", 290), ("Dukeman-small Pizza", 150), ("Chibella-double Pizza", 290)]
 }
 
 # Special delivery prices for KFC - Tarkwa
 KFC_TARKWA_DELIVERY_PRICES = {
-    "tarkwa central": 10,
-    "tna": 15,
+    "tarkwa central": 20,
+    "tna": 20,
     "university": 20,
     "aboso": 18,
-    "other": 25  # fallback/default for other locations
+    "other": 30  # fallback/default for other locations
 }
 DEFAULT_DELIVERY_FEE = 15  # default for all others
 
