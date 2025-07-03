@@ -73,15 +73,35 @@ if AIRTABLE_PAT and AIRTABLE_BASE_ID:
     except Exception as e:
         logger.error(f"Airtable failed: {e}")
 
-CATEGORIES = ["Chef One", "Eno's Kitchen", "Tovet", "Dine Inn - KT", "Founn", "KFC - Tarkwa"]
+# Vendor categories and menus
+CATEGORIES = [
+    "Chef One",
+    "Eno's Kitchen",
+    "Tovet",
+    "Dine Inn - KT",
+    "Founn",
+    "KFC - Tarkwa",
+    "Pizzaman"
+]
 MENUS = {
     "Chef One": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35)],
     "Eno's Kitchen": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("FriedRice & Chicken", 35)],
     "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
     "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 35)],
     "Founn": [("Banku & Tilapia", 35), ("FriedRice & Chicken", 35), ("Jollof & Chicken", 35)],
-    "KFC - Tarkwa": []
+    "KFC - Tarkwa": [("Zinger Burger Meal", 55), ("Twister Meal", 50), ("Streetwise 2", 48)],
+    "Pizzaman": [("Pepperoni Pizza", 60), ("Margherita Pizza", 50), ("Chicken Wings", 45)]
 }
+
+# Special delivery prices for KFC - Tarkwa
+KFC_TARKWA_DELIVERY_PRICES = {
+    "tarkwa central": 10,
+    "tna": 15,
+    "university": 20,
+    "aboso": 18,
+    "other": 25  # fallback/default for other locations
+}
+DEFAULT_DELIVERY_FEE = 15  # default for all others
 
 memory_sessions = {}
 
@@ -111,7 +131,9 @@ def get_session(msisdn):
             "custom_order": "",
             "total": 0,
             "order_history": [],
-            "session_id": str(uuid.uuid4())
+            "session_id": str(uuid.uuid4()),
+            "discount_code": None,
+            "discount_amount": 0
         }
     return memory_sessions[msisdn]
 
@@ -134,6 +156,18 @@ def log_to_airtable(msisdn, userid, message, continue_session, state=None, sessi
         logger.info(f"Logged to Airtable: {msisdn} - {message[:50]}...")
     except Exception as e:
         logger.error(f"Airtable log error: {e}")
+
+def get_delivery_fee(session):
+    vendor = session.get("selected_category", "")
+    location = session.get("delivery_location", "").strip().lower()
+    if vendor == "KFC - Tarkwa":
+        for loc, fee in KFC_TARKWA_DELIVERY_PRICES.items():
+            if loc != "other" and loc in location:
+                return fee
+        return KFC_TARKWA_DELIVERY_PRICES["other"]
+    else:
+        item_count = sum(qty for item, qty, cat in session["cart"])
+        return DEFAULT_DELIVERY_FEE + (item_count - 1) * 5 if item_count > 0 else 0
 
 def create_order(session, msisdn, order_type="regular"):
     order_id = str(uuid.uuid4())[:8].upper()
@@ -159,9 +193,14 @@ def create_order(session, msisdn, order_type="regular"):
             })
             total_items += qty
             items_total += item[1] * qty
-        delivery_fee = 15 + (total_items - 1) * 5 if total_items > 0 else 0
+        delivery_fee = get_delivery_fee(session)
         extra_charge = 4
         total = items_total + delivery_fee + extra_charge
+        # Apply discount if available
+        if session.get("discount_amount"):
+            total -= session["discount_amount"]
+            if total < 0:
+                total = 0
 
     if airtable_orders:
         try:
@@ -223,6 +262,10 @@ def ussd_handler():
             response = handle_custom_order(input_text, session, user_id, msisdn)
         elif state == "DELIVERY":
             response = handle_delivery(input_text, session, user_id, msisdn)
+        elif state == "DISCOUNT_ASK":
+            response = handle_discount_ask(input_text, session, user_id, msisdn)
+        elif state == "DISCOUNT_ENTER":
+            response = handle_discount_enter(input_text, session, user_id, msisdn)
         elif state == "CONFIRM":
             response = handle_confirm(input_text, session, user_id, msisdn)
         elif state == "CUSTOM_CONFIRM":
@@ -276,16 +319,11 @@ def handle_category(input_text, session, user_id, msisdn):
         if input_text in idxs:
             cat = CATEGORIES[int(input_text)-1]
             session["selected_category"] = cat
-            if cat == "KFC - Tarkwa":
-                session["state"] = "MAIN_MENU"
-                msg = "KFC - Tarkwa: Coming soon!"
-                return ussd_response(user_id, msisdn, msg, True)
-            else:
-                session["state"] = "ITEM"
-                menu = MENUS[cat]
-                menu_str = "\n".join([f"{i+1}. {m[0]} - GHS {m[1]}" for i, m in enumerate(menu)])
-                msg = f"{cat}:\n{menu_str}\n#. Back"
-                return ussd_response(user_id, msisdn, msg, True)
+            session["state"] = "ITEM"
+            menu = MENUS[cat]
+            menu_str = "\n".join([f"{i+1}. {m[0]} - GHS {m[1]}" for i, m in enumerate(menu)])
+            msg = f"{cat}:\n{menu_str}\n#. Back"
+            return ussd_response(user_id, msisdn, msg, True)
     except (ValueError, IndexError):
         pass
     cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
@@ -348,25 +386,108 @@ def handle_delivery(input_text, session, user_id, msisdn):
             session["state"] = "CUSTOM_CONFIRM"
             return show_custom_confirmation(session, user_id, msisdn)
         else:
-            session["state"] = "CONFIRM"
+            # Instead of confirmation, ask about discount code
             return show_confirmation(session, user_id, msisdn)
     msg = "Enter delivery location (min 3 chars):"
+    return ussd_response(user_id, msisdn, msg, True)
+
+def show_confirmation(session, user_id, msisdn):
+    lines = [f"{qty} x {item[0]} ({cat}) - GHS {item[1]*qty}" for item, qty, cat in session["cart"]]
+    item_count = sum(qty for item, qty, cat in session["cart"])
+    delivery_fee = get_delivery_fee(session)
+    extra_charge = 4
+    items_total = sum(item[1]*qty for item, qty, cat in session["cart"])
+    total = items_total + delivery_fee + extra_charge
+    session["total"] = total
+    msg = (
+        "Order Summary:\n" + "\n".join(lines) +
+        f"\nDelivery: GHS {delivery_fee}" +
+        f"\nService: GHS {extra_charge}" +
+        f"\nLocation: {session['delivery_location']}" +
+        f"\nTotal: GHS {total}\n\n"
+        "Do you have a discount code?\n1. Yes\n2. No"
+    )
+    session["state"] = "DISCOUNT_ASK"
+    return ussd_response(user_id, msisdn, msg, True)
+
+def handle_discount_ask(input_text, session, user_id, msisdn):
+    if input_text == "1":
+        session["state"] = "DISCOUNT_ENTER"
+        msg = "Enter your discount code:"
+        return ussd_response(user_id, msisdn, msg, True)
+    elif input_text == "2":
+        session["discount_code"] = None
+        session["discount_amount"] = 0
+        session["state"] = "CONFIRM"
+        return show_final_confirmation(session, user_id, msisdn)
+    else:
+        msg = "Do you have a discount code?\n1. Yes\n2. No"
+        return ussd_response(user_id, msisdn, msg, True)
+
+def handle_discount_enter(input_text, session, user_id, msisdn):
+    code = input_text.strip().upper()
+    # Example: Only code FLAP10 is valid for 10 GHS off
+    if code == "FLAP10":
+        session["discount_code"] = code
+        session["discount_amount"] = 10
+        msg = "Discount applied: GHS 10 off!"
+        session["state"] = "CONFIRM"
+        return show_final_confirmation(session, user_id, msisdn, discount_applied_msg=msg)
+    elif code == "0":
+        session["discount_code"] = None
+        session["discount_amount"] = 0
+        session["state"] = "CONFIRM"
+        return show_final_confirmation(session, user_id, msisdn)
+    else:
+        msg = "Invalid code. Try again or enter 0 to skip."
+        return ussd_response(user_id, msisdn, msg, True)
+
+def show_final_confirmation(session, user_id, msisdn, discount_applied_msg=None):
+    lines = [f"{qty} x {item[0]} ({cat}) - GHS {item[1]*qty}" for item, qty, cat in session["cart"]]
+    item_count = sum(qty for item, qty, cat in session["cart"])
+    delivery_fee = get_delivery_fee(session)
+    extra_charge = 4
+    items_total = sum(item[1]*qty for item, qty, cat in session["cart"])
+    total = items_total + delivery_fee + extra_charge
+    if session.get("discount_amount"):
+        total -= session["discount_amount"]
+        if total < 0:
+            total = 0
+    session["total"] = total
+    msg = ""
+    if discount_applied_msg:
+        msg += discount_applied_msg + "\n"
+    msg += (
+        "Order Summary:\n" + "\n".join(lines) +
+        f"\nDelivery: GHS {delivery_fee}" +
+        f"\nService: GHS {extra_charge}"
+    )
+    if session.get("discount_code"):
+        msg += f"\nDiscount ({session['discount_code']}): -GHS {session['discount_amount']}"
+    msg += (
+        f"\nLocation: {session['delivery_location']}" +
+        f"\nTotal: GHS {total}\n\n1. Confirm\n2. Cancel"
+    )
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_confirm(input_text, session, user_id, msisdn):
     if input_text == "2":
         session["cart"] = []
         session["state"] = "MAIN_MENU"
+        session["discount_code"] = None
+        session["discount_amount"] = 0
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
         order_id, total = create_order(session, msisdn, "regular")
         sms_msg = f"Your order #{order_id} has been received! Please dail *415*1738# and pay GHS {total} to process your order. Thank you!"
         send_sms_ghana(msisdn, sms_msg)
         session["cart"] = []
+        session["discount_code"] = None
+        session["discount_amount"] = 0
         session["state"] = "MAIN_MENU"
         msg = f"Order #{order_id} created!\n\nPlease dial *415*1738# and pay GHS {total} for order processing.\n\nThank you!"
         return ussd_response(user_id, msisdn, msg, False)
-    return show_confirmation(session, user_id, msisdn)
+    return show_final_confirmation(session, user_id, msisdn)
 
 def handle_custom_order(input_text, session, user_id, msisdn):
     if input_text == "#":
@@ -394,23 +515,6 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
         msg = f"Custom Order #{order_id} created!\n\nPlease dial *415*1738# and pay GHS 30 for delivery.\n\nThank you!"
         return ussd_response(user_id, msisdn, msg, False)
     return show_custom_confirmation(session, user_id, msisdn)
-
-def show_confirmation(session, user_id, msisdn):
-    lines = [f"{qty} x {item[0]} ({cat}) - GHS {item[1]*qty}" for item, qty, cat in session["cart"]]
-    item_count = sum(qty for item, qty, cat in session["cart"])
-    delivery_fee = 15 + (item_count - 1) * 5 if item_count > 0 else 0
-    extra_charge = 4
-    items_total = sum(item[1]*qty for item, qty, cat in session["cart"])
-    total = items_total + delivery_fee + extra_charge
-    session["total"] = total
-    msg = (
-        "Order Summary:\n" + "\n".join(lines) +
-        f"\nDelivery: GHS {delivery_fee}" +
-        f"\nService: GHS {extra_charge}" +
-        f"\nLocation: {session['delivery_location']}" +
-        f"\nTotal: GHS {total}\n\n1. Confirm\n2. Cancel"
-    )
-    return ussd_response(user_id, msisdn, msg, True)
 
 def show_custom_confirmation(session, user_id, msisdn):
     msg = (
