@@ -258,13 +258,13 @@ def ussd_handler():
         return jsonify({"error": "Internal error"}), 500
 
 def handle_main_menu(input_text, session, user_id, msisdn):
-    msg = "Welcome to FLAP Dish!\n1. Order Food\n2. Custom Order\n3. My Orders\n4. Help\n0. Exit\n\nEnter option:"
+    msg = "Welcome to FLAP Dish!\n1. Order Food\n2. Custom Order\n3. My Orders\n4. Help\n5. Campus Sellers\n0. Exit"
     if input_text == "" or input_text.startswith("*") or input_text == "#":
         pass
     elif input_text == "1":
         session["state"] = "CATEGORY"
         cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
-        msg = f"Select Vendor:\n{cat_menu}\n#. Back\n\nEnter option:"
+        msg = f"Select Vendor:\n{cat_menu}\n#. Back"
     elif input_text == "2":
         session["state"] = "CUSTOM_ORDER"
         msg = "Enter custom order details (what you want fulfilled):\n#. Back"
@@ -278,6 +278,8 @@ def handle_main_menu(input_text, session, user_id, msisdn):
             msg = "No orders yet.\n#. Back:"
     elif input_text == "4":
         msg = f"Call {SUPPORT_PHONE} for help.\n#. Back:"
+    elif input_text == "5":
+        msg = "Coming Soon!"."\n#. Back:"
     elif input_text == "0":
         msg = "Thank you for using FLAP Dish!"
         return ussd_response(user_id, msisdn, msg, False)
@@ -445,12 +447,12 @@ def show_final_confirmation(session, user_id, msisdn, discount_applied_msg=None)
     if discount_applied_msg:
         msg += discount_applied_msg + "\n"
     msg += (
-        f"{items_line}\nDeliv:{delivery_fee} Svc:{extra_charge}"
+        f"{items_line}\nDelivery:{delivery_fee} Service:{extra_charge}"
     )
     if session.get("discount_code"):
         msg += f" Disc:-{session['discount_amount']}"
     msg += (
-        f"\nLoc:{session['delivery_location']}\nTot:{total}\n"
+        f"\nLocation:{session['delivery_location']}\nTotal:{total}\n"
         "1. Confirm\n2. Cancel"
     )
     return ussd_response(user_id, msisdn, msg, True)
