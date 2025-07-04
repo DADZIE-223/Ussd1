@@ -385,8 +385,8 @@ def show_confirmation(session, user_id, msisdn):
         lines.append(f"+{len(cart)-2} more")
     items_line = ", ".join(lines)
     msg = (
-        f"{items_line}\nDelivery:{delivery_fee} service:{extra_charge}\n"
-        f"Location:{session['delivery_location']}\nTotal:{total}\n"
+        f"{items_line}\nDelivery: GHS {delivery_fee} service: GHS {extra_charge}\n"
+        f"Location:{session['delivery_location']}\nTotal: GHS {total}\n"
         "Discount code?\n1. Yes\n2. No:"
     )
     session["state"] = "DISCOUNT_ASK"
@@ -447,12 +447,12 @@ def show_final_confirmation(session, user_id, msisdn, discount_applied_msg=None)
     if discount_applied_msg:
         msg += discount_applied_msg + "\n"
     msg += (
-        f"{items_line}\nDelivery:{delivery_fee} Service:{extra_charge}"
+        f"{items_line}\nDelivery: GHS {delivery_fee} Service: GHS {extra_charge}"
     )
     if session.get("discount_code"):
-        msg += f" Disc:-{session['discount_amount']}"
+        msg += f" Discount:-{session['discount_amount']}"
     msg += (
-        f"\nLocation:{session['delivery_location']}\nTotal:{total}\n"
+        f"\nLocation:{session['delivery_location']}\nTotal: GHS {total}\n"
         "1. Confirm\n2. Cancel"
     )
     return ussd_response(user_id, msisdn, msg, True)
@@ -507,7 +507,7 @@ def show_custom_confirmation(session, user_id, msisdn):
     summary = session['custom_order'][:40]
     msg = (
         f"Custom Order:\n{summary}...\n"
-        f"Loc:{session['delivery_location']}\nDeliv:30\n"
+        f"Location:{session['delivery_location']}\nDelivery: GHS30\n"
         "1. Confirm\n2. Cancel"
     )
     return ussd_response(user_id, msisdn, msg, True)
