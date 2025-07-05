@@ -408,7 +408,7 @@ def handle_discount_ask(input_text, session, user_id, msisdn):
 
 def handle_discount_enter(input_text, session, user_id, msisdn):
     code = input_text.strip().upper()
-    discount_dict = {"FLAP10": 10, "VOU": 5, "DNA": 12}
+    discount_dict = {"FLAP10": 10, "VOU": 5, "GH": 12}
     if code in discount_dict:
         session["discount_code"] = code
         session["discount_amount"] = discount_dict[code]
