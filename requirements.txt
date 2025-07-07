@@ -2,3 +2,4 @@ Flask==2.3.3
 pyairtable==2.1.0
 requests==2.31.0
 gunicorn==21.2.0
+firebase-admin
