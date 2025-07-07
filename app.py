@@ -9,6 +9,10 @@ import uuid
 import urllib.request
 import urllib.parse
 
+# --- Firebase imports ---
+import firebase_admin
+from firebase_admin import credentials, firestore
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,13 +22,45 @@ app = Flask(__name__)
 # Environment variables
 AIRTABLE_PAT = os.getenv("AIRTABLE_PAT")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
-AIRTABLE_TABLE_NAME = os.getenv("AIRTABLE_TABLE_NAME", "Responses")
 AIRTABLE_ORDERS_TABLE = os.getenv("AIRTABLE_ORDERS_TABLE", "Orders")
 SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "0204186509")
 
-# Bulk SMS Ghana configuration
 BULK_SMS_API_KEY = os.getenv("BULK_SMS_API_KEY")
 BULK_SMS_SENDER_ID = os.getenv("BULK_SMS_SENDER_ID", "FLAP")
+
+# --- Firebase initialization ---
+FIREBASE_CREDENTIALS_JSON = os.getenv("FIREBASE_CREDENTIALS_JSON")
+firebase_db = None
+
+if FIREBASE_CREDENTIALS_JSON:
+    try:
+        creds_path = "/tmp/firebase_creds.json"
+        with open(creds_path, "w") as f:
+            f.write(FIREBASE_CREDENTIALS_JSON)
+        cred = credentials.Certificate(creds_path)
+        firebase_admin.initialize_app(cred)
+        firebase_db = firestore.client()
+        logger.info("Firebase initialized")
+    except Exception as e:
+        logger.error(f"Firebase init error: {e}")
+
+def log_to_firebase(msisdn, userid, message, continue_session, state=None, session_id=None):
+    if not firebase_db:
+        return
+    try:
+        doc_ref = firebase_db.collection("ussd_responses").document()
+        doc_ref.set({
+            "MSISDN": msisdn,
+            "USERID": userid,
+            "M1": message,
+            "ContinueSession": str(continue_session),
+            "State": state or "unknown",
+            "SessionID": session_id or "unknown",
+            "Timestamp": get_airtable_datetime()
+        })
+        logger.info(f"Logged to Firebase: {msisdn} - {message[:50]}...")
+    except Exception as e:
+        logger.error(f"Firebase log error: {e}")
 
 def send_sms_ghana(phone_number, message):
     params = {
@@ -44,16 +80,14 @@ def send_sms_ghana(phone_number, message):
         logger.error(f"SMS sending failed: {e}")
     return False
 
-# Airtable setup (optional)
-airtable_table = None
+# Airtable setup (orders only)
 airtable_orders = None
 if AIRTABLE_PAT and AIRTABLE_BASE_ID:
     try:
         api = Api(AIRTABLE_PAT)
         base = api.base(AIRTABLE_BASE_ID)
-        airtable_table = base.table(AIRTABLE_TABLE_NAME)
         airtable_orders = base.table(AIRTABLE_ORDERS_TABLE)
-        logger.info("Airtable connected")
+        logger.info("Airtable connected for orders")
     except Exception as e:
         logger.error(f"Airtable failed: {e}")
 
@@ -121,22 +155,24 @@ def get_session(msisdn):
 def save_session(msisdn, session):
     memory_sessions[msisdn] = session
 
-def log_to_airtable(msisdn, userid, message, continue_session, state=None, session_id=None):
-    if not airtable_table:
+def log_to_airtable_order(msisdn, userid, items, total, delivery_location, order_type, order_id):
+    if not airtable_orders:
         return
     try:
-        airtable_table.create({
+        airtable_orders.create({
+            "OrderID": order_id,
             "MSISDN": msisdn,
             "USERID": userid,
-            "M1": message,
-            "ContinueSession": str(continue_session),
-            "State": state or "unknown",
-            "SessionID": session_id or "unknown",
-            "Timestamp": get_airtable_datetime()
+            "Items": json.dumps(items),
+            "Total": total,
+            "DeliveryLocation": delivery_location,
+            "OrderType": order_type,
+            "Status": "Processing",
+            "CreatedAt": get_airtable_datetime()
         })
-        logger.info(f"Logged to Airtable: {msisdn} - {message[:50]}...")
+        logger.info(f"Order logged to Airtable: {msisdn} - {order_id}")
     except Exception as e:
-        logger.error(f"Airtable log error: {e}")
+        logger.error(f"Airtable order log error: {e}")
 
 def get_delivery_fee(session):
     vendor = session.get("selected_category", "")
@@ -150,7 +186,7 @@ def get_delivery_fee(session):
         item_count = sum(qty for item, qty, cat in session["cart"])
         return DEFAULT_DELIVERY_FEE + (item_count - 1) * 5 if item_count > 0 else 0
 
-def create_order(session, msisdn, order_type="regular"):
+def create_order(session, msisdn, order_type="regular", user_id=""):
     order_id = str(uuid.uuid4())[:8].upper()
     if order_type == "custom":
         items = [{
@@ -180,20 +216,11 @@ def create_order(session, msisdn, order_type="regular"):
             if total < 0:
                 total = 0
 
-    if airtable_orders:
-        try:
-            airtable_orders.create({
-                "OrderID": order_id,
-                "MSISDN": msisdn,
-                "Items": json.dumps(items),
-                "Total": total,
-                "DeliveryLocation": session["delivery_location"],
-                "OrderType": order_type,
-                "Status": "Processing",
-                "CreatedAt": get_airtable_datetime()
-            })
-        except Exception as e:
-            logger.error(f"Order log error: {e}")
+    log_to_airtable_order(
+        msisdn, user_id, items, total,
+        session.get("delivery_location", ""),
+        order_type, order_id
+    )
 
     session["order_history"].append({
         "order_id": order_id,
@@ -225,7 +252,7 @@ def ussd_handler():
         session = get_session(msisdn)
         state = session["state"]
         logger.info(f"USSD: {msisdn}, State: {state}, Input: '{input_text}'")
-        log_to_airtable(msisdn, user_id, input_text, True, session['state'], session.get('session_id'))
+        log_to_firebase(msisdn, user_id, input_text, True, session['state'], session.get('session_id'))
         if state == "MAIN_MENU":
             response = handle_main_menu(input_text, session, user_id, msisdn)
         elif state == "CATEGORY":
@@ -375,8 +402,6 @@ def show_confirmation(session, user_id, msisdn):
     items_total = sum(item[1]*qty for item, qty, cat in cart)
     total = items_total + delivery_fee + extra_charge
     session["total"] = total
-
-    # Truncate summary
     lines = []
     for idx, (item, qty, cat) in enumerate(cart):
         if idx < 2:
@@ -435,7 +460,6 @@ def show_final_confirmation(session, user_id, msisdn, discount_applied_msg=None)
         if total < 0:
             total = 0
     session["total"] = total
-
     lines = []
     for idx, (item, qty, cat) in enumerate(cart):
         if idx < 2:
@@ -465,7 +489,7 @@ def handle_confirm(input_text, session, user_id, msisdn):
         session["discount_amount"] = 0
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
-        order_id, total = create_order(session, msisdn, "regular")
+        order_id, total = create_order(session, msisdn, "regular", user_id)
         sms_msg = f"Your order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!"
         send_sms_ghana(msisdn, sms_msg)
         session["cart"] = []
@@ -494,7 +518,7 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
         session["state"] = "MAIN_MENU"
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
-        order_id, total = create_order(session, msisdn, "custom")
+        order_id, total = create_order(session, msisdn, "custom", user_id)
         sms_msg = f"Your FLAP Dish custom order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!"
         send_sms_ghana(msisdn, sms_msg)
         session["custom_order"] = ""
@@ -514,7 +538,7 @@ def show_custom_confirmation(session, user_id, msisdn):
 
 def ussd_response(userid, msisdn, msg, continue_session=True):
     truncated_msg = msg[:160]
-    log_to_airtable(msisdn, userid, truncated_msg, continue_session)
+    log_to_firebase(msisdn, userid, truncated_msg, continue_session)
     logger.info(f"Response to {msisdn}: {truncated_msg[:50]}...")
     return jsonify({
         "USERID": userid,
@@ -528,7 +552,7 @@ def health_check():
     return jsonify({
         "status": "healthy",
         "timestamp": get_airtable_datetime(),
-        "airtable": "connected" if airtable_table else "disabled"
+        "airtable": "connected" if airtable_orders else "disabled"
     })
 
 if __name__ == "__main__":
