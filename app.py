@@ -100,6 +100,7 @@ CATEGORIES = [
     "KFC - Tarkwa",
     "Pizzaman"
 ]
+
 MENUS = {
     "Chef One": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35)],
     "Eno's Kitchen": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("FriedRice & Chicken", 35)],
@@ -110,6 +111,19 @@ MENUS = {
     "Pizzaman": [("Triple b-double Pizza", 290), ("Dukeman-small Pizza", 150), ("Chibella-double Pizza", 290)]
 }
 
+# Delivery fees by category (vendor) <--- changed
+CATEGORY_DELIVERY_FEES = {
+    "Chef One": 10,
+    "Eno's Kitchen": 12,
+    "Tovet": 8,
+    "Dine Inn - KT": 15,
+    "Founn": 10,
+    "KFC - Tarkwa": 20,  # Will use special area logic below
+    "Pizzaman": 13,
+    "Custom": 30  # Used for custom order
+}
+DEFAULT_DELIVERY_FEE = 15
+
 KFC_TARKWA_DELIVERY_PRICES = {
     "tarkwa central": 20,
     "tna": 20,
@@ -117,8 +131,17 @@ KFC_TARKWA_DELIVERY_PRICES = {
     "aboso": 18,
     "other": 30
 }
-DEFAULT_DELIVERY_FEE = 15
+
 memory_sessions = {}
+
+# Custom order menu options <--- changed
+CUSTOM_ORDER_MENUS = [
+    "Gas filling",
+    "Custom food order",
+    "Grocery (Ransbet)",
+    "Pickup",
+    "Other"
+]
 
 def get_airtable_datetime():
     return datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -144,6 +167,7 @@ def get_session(msisdn):
             "selected_item": None,
             "delivery_location": "",
             "custom_order": "",
+            "custom_order_type": "",  # <--- changed
             "total": 0,
             "order_history": [],
             "session_id": str(uuid.uuid4()),
@@ -182,21 +206,25 @@ def get_delivery_fee(session):
             if loc != "other" and loc in location:
                 return fee
         return KFC_TARKWA_DELIVERY_PRICES["other"]
+    elif vendor:
+        # Use category-specific fee
+        return CATEGORY_DELIVERY_FEES.get(vendor, DEFAULT_DELIVERY_FEE)
+    elif session.get("custom_order"):
+        return CATEGORY_DELIVERY_FEES.get("Custom", 30)
     else:
-        item_count = sum(qty for item, qty, cat in session["cart"])
-        return DEFAULT_DELIVERY_FEE + (item_count - 1) * 5 if item_count > 0 else 0
+        return DEFAULT_DELIVERY_FEE
 
 def create_order(session, msisdn, order_type="regular", user_id=""):
     order_id = str(uuid.uuid4())[:8].upper()
     if order_type == "custom":
         items = [{
-            "name": "Custom Order",
+            "name": f"Custom Order ({session.get('custom_order_type', 'Other')})",
             "description": session["custom_order"],
-            "price": 30,
+            "price": CATEGORY_DELIVERY_FEES.get("Custom", 30),  # <--- changed
             "quantity": 1,
             "category": "Custom"
         }]
-        total = 30
+        total = CATEGORY_DELIVERY_FEES.get("Custom", 30)  # <--- changed
     else:
         items = []
         items_total = 0
@@ -263,6 +291,8 @@ def ussd_handler():
             response = handle_quantity(input_text, session, user_id, msisdn)
         elif state == "CART":
             response = handle_cart(input_text, session, user_id, msisdn)
+        elif state == "CUSTOM_ORDER_TYPE":  # <--- changed
+            response = handle_custom_order_type(input_text, session, user_id, msisdn)
         elif state == "CUSTOM_ORDER":
             response = handle_custom_order(input_text, session, user_id, msisdn)
         elif state == "DELIVERY":
@@ -293,8 +323,9 @@ def handle_main_menu(input_text, session, user_id, msisdn):
         cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
         msg = f"Select Vendor:\n{cat_menu}\n#. Back"
     elif input_text == "2":
-        session["state"] = "CUSTOM_ORDER"
-        msg = "Enter custom order details (what you want fulfilled):\n#. Back"
+        session["state"] = "CUSTOM_ORDER_TYPE"  # <--- changed
+        custom_menu = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(CUSTOM_ORDER_MENUS)])
+        msg = f"Select a custom order type:\n{custom_menu}\n#. Back"
     elif input_text == "3":
         orders = session.get("order_history", [])
         if orders:
@@ -312,6 +343,21 @@ def handle_main_menu(input_text, session, user_id, msisdn):
         return ussd_response(user_id, msisdn, msg, False)
     else:
         msg = "Invalid option.\n" + msg
+    return ussd_response(user_id, msisdn, msg, True)
+
+def handle_custom_order_type(input_text, session, user_id, msisdn):
+    if input_text == "#":
+        session["state"] = "MAIN_MENU"
+        return handle_main_menu("", session, user_id, msisdn)
+    idxs = [str(i+1) for i in range(len(CUSTOM_ORDER_MENUS))]
+    if input_text in idxs:
+        selected_type = CUSTOM_ORDER_MENUS[int(input_text)-1]
+        session["custom_order_type"] = selected_type
+        session["state"] = "CUSTOM_ORDER"
+        msg = f"Enter details for '{selected_type}':\n#. Back"
+        return ussd_response(user_id, msisdn, msg, True)
+    custom_menu = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(CUSTOM_ORDER_MENUS)])
+    msg = f"Select a custom order type:\n{custom_menu}\n#. Back"
     return ussd_response(user_id, msisdn, msg, True)
 
 def handle_category(input_text, session, user_id, msisdn):
@@ -502,8 +548,8 @@ def handle_confirm(input_text, session, user_id, msisdn):
 
 def handle_custom_order(input_text, session, user_id, msisdn):
     if input_text == "#":
-        session["state"] = "MAIN_MENU"
-        return handle_main_menu("", session, user_id, msisdn)
+        session["state"] = "CUSTOM_ORDER_TYPE"  # <--- changed, go back to type menu
+        return handle_custom_order_type("", session, user_id, msisdn)
     if input_text and len(input_text.strip()) >= 10:
         session["custom_order"] = input_text.strip()
         session["state"] = "DELIVERY"
@@ -515,6 +561,7 @@ def handle_custom_order(input_text, session, user_id, msisdn):
 def handle_custom_confirm(input_text, session, user_id, msisdn):
     if input_text == "2":
         session["custom_order"] = ""
+        session["custom_order_type"] = ""  # <--- changed
         session["state"] = "MAIN_MENU"
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
@@ -522,6 +569,7 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
         sms_msg = f"Your FLAP Dish custom order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!"
         send_sms_ghana(msisdn, sms_msg)
         session["custom_order"] = ""
+        session["custom_order_type"] = ""  # <--- changed
         session["state"] = "MAIN_MENU"
         msg = f"Custom Order #{order_id} created!\nPlease dial *415*1738# and pay GHS {total} for delivery.\nThank you!"
         return ussd_response(user_id, msisdn, msg, False)
@@ -529,9 +577,11 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
 
 def show_custom_confirmation(session, user_id, msisdn):
     summary = session['custom_order'][:40]
+    order_type = session.get("custom_order_type", "Other")
+    delivery_fee = CATEGORY_DELIVERY_FEES.get("Custom", 30)
     msg = (
-        f"Custom Order:\n{summary}...\n"
-        f"Location:{session['delivery_location']}\nDelivery: GHS30\n"
+        f"Custom Order ({order_type}):\n{summary}...\n"
+        f"Location:{session['delivery_location']}\nDelivery: GHS{delivery_fee}\n"
         "1. Confirm\n2. Cancel"
     )
     return ussd_response(user_id, msisdn, msg, True)
