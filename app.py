@@ -113,22 +113,22 @@ MENUS = {
 
 # Delivery fees by category (vendor) <--- changed
 CATEGORY_DELIVERY_FEES = {
-    "Chef One": 10,
-    "Eno's Kitchen": 12,
-    "Tovet": 8,
+    "Chef One": 15,
+    "Eno's Kitchen": 15,
+    "Tovet": 15,
     "Dine Inn - KT": 15,
-    "Founn": 10,
-    "KFC - Tarkwa": 20,  # Will use special area logic below
-    "Pizzaman": 13,
+    "Founn": 15,
+    "KFC - Tarkwa": 25,  # Will use special area logic below
+    "Pizzaman": 15,
     "Custom": 30  # Used for custom order
 }
 DEFAULT_DELIVERY_FEE = 15
 
 KFC_TARKWA_DELIVERY_PRICES = {
-    "tarkwa central": 20,
-    "tna": 20,
-    "university": 20,
-    "aboso": 18,
+    "tarkwa central": 30,
+    "tna": 30,
+    "university": 30,
+    "aboso": 30,
     "other": 30
 }
 
@@ -137,9 +137,9 @@ memory_sessions = {}
 # Custom order menu options <--- changed
 CUSTOM_ORDER_MENUS = [
     "Gas filling",
-    "Custom food order",
     "Grocery (Ransbet)",
     "Pickup",
+    "Custom food order",
     "Other"
 ]
 
@@ -457,7 +457,7 @@ def show_confirmation(session, user_id, msisdn):
     items_line = ", ".join(lines)
     msg = (
         f"{items_line}\nDelivery: GHS {delivery_fee} service: GHS {extra_charge}\n"
-        f"Location:{session['delivery_location']}\nTotal: GHS {total}\n"
+        f"Location: {session['delivery_location']}\nTotal: GHS {total}\n"
         "Discount code?\n1. Yes\n2. No:"
     )
     session["state"] = "DISCOUNT_ASK"
