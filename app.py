@@ -24,7 +24,7 @@ app = Flask(__name__)
 AIRTABLE_PAT = os.getenv("AIRTABLE_PAT")
 AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_ORDERS_TABLE = os.getenv("AIRTABLE_ORDERS_TABLE", "Orders")
-SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "0204186509")
+SUPPORT_PHONE = os.getenv("SUPPORT_PHONE")
 
 BULK_SMS_API_KEY = os.getenv("BULK_SMS_API_KEY")  #sms api (bulk sms ghana) 
 BULK_SMS_SENDER_ID = os.getenv("BULK_SMS_SENDER_ID")
@@ -124,7 +124,7 @@ CATEGORY_DELIVERY_FEES = {
     "Custom": 30  # Used for custom order
 }
 DEFAULT_DELIVERY_FEE = 15
-GAS_DELIVERY_FEE = 10  # Set your delivery fee for gas filling
+GAS_DELIVERY_FEE = 30  # Set your delivery fee for gas filling
 
 KFC_TARKWA_DELIVERY_PRICES = {
     "tarkwa central": 30,
@@ -451,19 +451,15 @@ def handle_gas_confirm(input_text, session, user_id, msisdn):
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
         order_id, total = create_order(session, msisdn, "gas_filling", user_id)
-        sms_msg = f"Your Gas Filling order #{order_id} received! Pay GHS {total} to process your order."
+        sms_msg = f"Your Gas Filling order #{order_id} received! Pay GHS {total} to *415*1738# to process your order."
         send_sms_ghana(msisdn, sms_msg)
         session.pop("selected_gas", None)
         session.pop("gas_fill_amount", None)
         session.pop("gas_location", None)
         session["state"] = "MAIN_MENU"
-        msg = f"Order #{order_id} created!\nPay GHS {total} for processing.\nThank you!"
+        msg = f"Order #{order_id} created!\nPay GHS {total} to *415*1738# for processing.\nThank you!"
         return ussd_response(user_id, msisdn, msg, False)
     return show_gas_confirmation(session, user_id, msisdn)
-
-# ... (rest of your original food ordering and custom order handlers go here, unchanged) ...
-
-# All other original handlers (handle_category, handle_item, handle_quantity, handle_cart, handle_delivery, etc) remain unchanged from your code above.
 
 def handle_custom_order_type(input_text, session, user_id, msisdn):
     if input_text == "#":
