@@ -124,6 +124,7 @@ CATEGORY_DELIVERY_FEES = {
     "Custom": 30  # Used for custom order
 }
 DEFAULT_DELIVERY_FEE = 15
+GAS_DELIVERY_FEE = 10  # Set your delivery fee for gas filling
 
 KFC_TARKWA_DELIVERY_PRICES = {
     "tarkwa central": 30,
@@ -135,9 +136,9 @@ KFC_TARKWA_DELIVERY_PRICES = {
 
 memory_sessions = {}
 
-# Custom order menu options <--- changed
+GAS_SIZES = [("3kg", 60), ("6kg", 120), ("12.5kg", 240)]  # Size, min price
+
 CUSTOM_ORDER_MENUS = [
-    "Gas filling",
     "Grocery (Ransbet)",
     "Pickup",
     "Custom food order",
@@ -168,7 +169,7 @@ def get_session(msisdn):
             "selected_item": None,
             "delivery_location": "",
             "custom_order": "",
-            "custom_order_type": "",  # jjh
+            "custom_order_type": "",
             "total": 0,
             "order_history": [],
             "session_id": str(uuid.uuid4()),
@@ -208,7 +209,6 @@ def get_delivery_fee(session):
                 return fee
         return KFC_TARKWA_DELIVERY_PRICES["other"]
     elif vendor:
-        # Use category-specific fee
         return CATEGORY_DELIVERY_FEES.get(vendor, DEFAULT_DELIVERY_FEE)
     elif session.get("custom_order"):
         return CATEGORY_DELIVERY_FEES.get("Custom", 30)
@@ -221,11 +221,34 @@ def create_order(session, msisdn, order_type="regular", user_id=""):
         items = [{
             "name": f"Custom Order ({session.get('custom_order_type', 'Other')})",
             "description": session["custom_order"],
-            "price": CATEGORY_DELIVERY_FEES.get("Custom", 30),  # 
+            "price": CATEGORY_DELIVERY_FEES.get("Custom", 30),
             "quantity": 1,
             "category": "Custom"
         }]
-        total = CATEGORY_DELIVERY_FEES.get("Custom", 30)  # <--- 
+        total = CATEGORY_DELIVERY_FEES.get("Custom", 30)
+    elif order_type == "gas_filling":
+        gas_size = session.get("selected_gas", ("Unknown", 0))
+        gas_amount = session.get("gas_fill_amount", 0)
+        delivery_fee = GAS_DELIVERY_FEE
+        items = [{
+            "name": f"Gas Filling - {gas_size[0]}",
+            "price": gas_amount,
+            "quantity": 1,
+            "category": "Gas Filling"
+        }]
+        total = gas_amount + delivery_fee
+        log_to_airtable_order(
+            msisdn, user_id, items, total,
+            session.get("gas_location", ""),
+            order_type, order_id
+        )
+        session["order_history"].append({
+            "order_id": order_id,
+            "total": total,
+            "order_type": order_type,
+            "created_at": get_airtable_datetime()
+        })
+        return order_id, total
     else:
         items = []
         items_total = 0
@@ -284,6 +307,14 @@ def ussd_handler():
         log_to_firebase(msisdn, user_id, input_text, True, session['state'], session.get('session_id'))
         if state == "MAIN_MENU":
             response = handle_main_menu(input_text, session, user_id, msisdn)
+        elif state == "GAS_SIZE":
+            response = handle_gas_size(input_text, session, user_id, msisdn)
+        elif state == "GAS_AMOUNT":
+            response = handle_gas_amount(input_text, session, user_id, msisdn)
+        elif state == "GAS_LOCATION":
+            response = handle_gas_location(input_text, session, user_id, msisdn)
+        elif state == "GAS_CONFIRM":
+            response = handle_gas_confirm(input_text, session, user_id, msisdn)
         elif state == "CATEGORY":
             response = handle_category(input_text, session, user_id, msisdn)
         elif state == "ITEM":
@@ -292,7 +323,7 @@ def ussd_handler():
             response = handle_quantity(input_text, session, user_id, msisdn)
         elif state == "CART":
             response = handle_cart(input_text, session, user_id, msisdn)
-        elif state == "CUSTOM_ORDER_TYPE":  # <--- changed
+        elif state == "CUSTOM_ORDER_TYPE":
             response = handle_custom_order_type(input_text, session, user_id, msisdn)
         elif state == "CUSTOM_ORDER":
             response = handle_custom_order(input_text, session, user_id, msisdn)
@@ -316,7 +347,7 @@ def ussd_handler():
         return jsonify({"error": "Internal error"}), 500
 
 def handle_main_menu(input_text, session, user_id, msisdn):
-    msg = "Welcome to FLAP Dish!\n1. Order Food\n2. Custom Order\n3. My Orders\n4. Help\n5. Campus Sellers\n0. Exit"
+    msg = "Welcome to FLAP Dish!\n1. Order Food\n2. Gas Filling\n3. Custom Order\n4. My Orders\n5. Help\n6. Campus Sellers\n0. Exit"
     if input_text == "" or input_text.startswith("*") or input_text == "#":
         pass
     elif input_text == "1":
@@ -324,10 +355,14 @@ def handle_main_menu(input_text, session, user_id, msisdn):
         cat_menu = "\n".join([f"{i+1}. {cat}" for i, cat in enumerate(CATEGORIES)])
         msg = f"Select Vendor:\n{cat_menu}\n#. Back"
     elif input_text == "2":
-        session["state"] = "CUSTOM_ORDER_TYPE"  # <--- changed
+        session["state"] = "GAS_SIZE"
+        gas_size_menu = "\n".join([f"{i+1}. {s[0]} (min GHS {s[1]})" for i, s in enumerate(GAS_SIZES)])
+        msg = f"Select gas cylinder size:\n{gas_size_menu}\n#. Back"
+    elif input_text == "3":
+        session["state"] = "CUSTOM_ORDER_TYPE"
         custom_menu = "\n".join([f"{i+1}. {opt}" for i, opt in enumerate(CUSTOM_ORDER_MENUS)])
         msg = f"Select a custom order type:\n{custom_menu}\n#. Back"
-    elif input_text == "3":
+    elif input_text == "4":
         orders = session.get("order_history", [])
         if orders:
             recent = orders[-3:]
@@ -335,9 +370,9 @@ def handle_main_menu(input_text, session, user_id, msisdn):
             msg = "Recent Orders:\n" + "\n".join(order_lines) + "\n#. Back:"
         else:
             msg = "No orders yet.\n#. Back:"
-    elif input_text == "4":
-        msg = f"Call {SUPPORT_PHONE} for help.\n#. Back:"
     elif input_text == "5":
+        msg = f"Call {SUPPORT_PHONE} for help.\n#. Back:"
+    elif input_text == "6":
         msg = "Coming Soon! \n#. Back:"
     elif input_text == "0":
         msg = "Thank you for using FLAP Dish!"
@@ -345,6 +380,90 @@ def handle_main_menu(input_text, session, user_id, msisdn):
     else:
         msg = "Invalid option.\n" + msg
     return ussd_response(user_id, msisdn, msg, True)
+
+def handle_gas_size(input_text, session, user_id, msisdn):
+    if input_text == "#":
+        session["state"] = "MAIN_MENU"
+        return handle_main_menu("", session, user_id, msisdn)
+    idxs = [str(i+1) for i in range(len(GAS_SIZES))]
+    if input_text in idxs:
+        selected = GAS_SIZES[int(input_text)-1]
+        session["selected_gas"] = selected
+        session["state"] = "GAS_AMOUNT"
+        msg = f"{selected[0]} selected. How much do you want to fill? (in cedis)\n#. Back"
+        return ussd_response(user_id, msisdn, msg, True)
+    gas_size_menu = "\n".join([f"{i+1}. {s[0]} (min GHS {s[1]})" for i, s in enumerate(GAS_SIZES)])
+    msg = f"Select gas cylinder size:\n{gas_size_menu}\n#. Back"
+    return ussd_response(user_id, msisdn, msg, True)
+
+def handle_gas_amount(input_text, session, user_id, msisdn):
+    if input_text == "#":
+        session["state"] = "GAS_SIZE"
+        return handle_gas_size("", session, user_id, msisdn)
+    try:
+        amount = int(input_text)
+        min_amount = session["selected_gas"][1]
+        if amount >= min_amount:
+            session["gas_fill_amount"] = amount
+            session["state"] = "GAS_LOCATION"
+            msg = "Enter delivery location:\n#. Back"
+            return ussd_response(user_id, msisdn, msg, True)
+        else:
+            msg = f"Minimum for {session['selected_gas'][0]} is GHS {min_amount}. Enter amount (in cedis):\n#. Back"
+            return ussd_response(user_id, msisdn, msg, True)
+    except:
+        msg = "Please enter a valid amount in cedis:\n#. Back"
+        return ussd_response(user_id, msisdn, msg, True)
+
+def handle_gas_location(input_text, session, user_id, msisdn):
+    if input_text == "#":
+        session["state"] = "GAS_AMOUNT"
+        return handle_gas_amount("", session, user_id, msisdn)
+    if input_text and len(input_text.strip()) >= 3:
+        session["gas_location"] = input_text.strip()
+        session["state"] = "GAS_CONFIRM"
+        return show_gas_confirmation(session, user_id, msisdn)
+    msg = "Enter delivery location (min 3 chars):\n#. Back"
+    return ussd_response(user_id, msisdn, msg, True)
+
+def show_gas_confirmation(session, user_id, msisdn):
+    size, min_price = session["selected_gas"]
+    fill_amount = session["gas_fill_amount"]
+    location = session["gas_location"]
+    delivery_fee = GAS_DELIVERY_FEE
+    total = fill_amount + delivery_fee
+    session["total"] = total
+    msg = (
+        f"{size} gas\nTop-up: GHS {fill_amount}\n"
+        f"Location: {location}\n"
+        f"Delivery Fee: GHS {delivery_fee}\n"
+        f"Total: GHS {total}\n"
+        "1. Confirm\n2. Cancel"
+    )
+    return ussd_response(user_id, msisdn, msg, True)
+
+def handle_gas_confirm(input_text, session, user_id, msisdn):
+    if input_text == "2":
+        session.pop("selected_gas", None)
+        session.pop("gas_fill_amount", None)
+        session.pop("gas_location", None)
+        session["state"] = "MAIN_MENU"
+        return handle_main_menu("", session, user_id, msisdn)
+    elif input_text == "1":
+        order_id, total = create_order(session, msisdn, "gas_filling", user_id)
+        sms_msg = f"Your Gas Filling order #{order_id} received! Pay GHS {total} to process your order."
+        send_sms_ghana(msisdn, sms_msg)
+        session.pop("selected_gas", None)
+        session.pop("gas_fill_amount", None)
+        session.pop("gas_location", None)
+        session["state"] = "MAIN_MENU"
+        msg = f"Order #{order_id} created!\nPay GHS {total} for processing.\nThank you!"
+        return ussd_response(user_id, msisdn, msg, False)
+    return show_gas_confirmation(session, user_id, msisdn)
+
+# ... (rest of your original food ordering and custom order handlers go here, unchanged) ...
+
+# All other original handlers (handle_category, handle_item, handle_quantity, handle_cart, handle_delivery, etc) remain unchanged from your code above.
 
 def handle_custom_order_type(input_text, session, user_id, msisdn):
     if input_text == "#":
@@ -549,7 +668,7 @@ def handle_confirm(input_text, session, user_id, msisdn):
 
 def handle_custom_order(input_text, session, user_id, msisdn):
     if input_text == "#":
-        session["state"] = "CUSTOM_ORDER_TYPE"  # <--- changed, go back to type menu
+        session["state"] = "CUSTOM_ORDER_TYPE"
         return handle_custom_order_type("", session, user_id, msisdn)
     if input_text and len(input_text.strip()) >= 10:
         session["custom_order"] = input_text.strip()
@@ -562,7 +681,7 @@ def handle_custom_order(input_text, session, user_id, msisdn):
 def handle_custom_confirm(input_text, session, user_id, msisdn):
     if input_text == "2":
         session["custom_order"] = ""
-        session["custom_order_type"] = ""  # <--- changed
+        session["custom_order_type"] = ""
         session["state"] = "MAIN_MENU"
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
@@ -570,7 +689,7 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
         sms_msg = f"Your FLAP Dish custom order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!"
         send_sms_ghana(msisdn, sms_msg)
         session["custom_order"] = ""
-        session["custom_order_type"] = ""  # <--- changed
+        session["custom_order_type"] = ""
         session["state"] = "MAIN_MENU"
         msg = f"Custom Order #{order_id} created!\nPlease dial *415*1738# and pay GHS {total} for delivery.\nThank you!"
         return ussd_response(user_id, msisdn, msg, False)
