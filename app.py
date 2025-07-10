@@ -112,7 +112,7 @@ MENUS = {
     "Pizzaman": [("Triple b-double Pizza", 290), ("Dukeman-small Pizza", 150), ("Chibella-double Pizza", 290)]
 }
 
-# Delivery fees by category (vendor) <--- changed
+# Delivery fees by category (vendor) 
 CATEGORY_DELIVERY_FEES = {
     "Chef One": 15,
     "Eno's Kitchen": 15,
@@ -168,7 +168,7 @@ def get_session(msisdn):
             "selected_item": None,
             "delivery_location": "",
             "custom_order": "",
-            "custom_order_type": "",  # <--- changed
+            "custom_order_type": "",  # jjh
             "total": 0,
             "order_history": [],
             "session_id": str(uuid.uuid4()),
@@ -221,11 +221,11 @@ def create_order(session, msisdn, order_type="regular", user_id=""):
         items = [{
             "name": f"Custom Order ({session.get('custom_order_type', 'Other')})",
             "description": session["custom_order"],
-            "price": CATEGORY_DELIVERY_FEES.get("Custom", 30),  # <--- changed
+            "price": CATEGORY_DELIVERY_FEES.get("Custom", 30),  # 
             "quantity": 1,
             "category": "Custom"
         }]
-        total = CATEGORY_DELIVERY_FEES.get("Custom", 30)  # <--- changed
+        total = CATEGORY_DELIVERY_FEES.get("Custom", 30)  # <--- 
     else:
         items = []
         items_total = 0
