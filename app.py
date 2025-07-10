@@ -1,3 +1,4 @@
+# ------ dependencies -----
 from flask import Flask, request, jsonify
 import os
 import json
@@ -25,8 +26,8 @@ AIRTABLE_BASE_ID = os.getenv("AIRTABLE_BASE_ID")
 AIRTABLE_ORDERS_TABLE = os.getenv("AIRTABLE_ORDERS_TABLE", "Orders")
 SUPPORT_PHONE = os.getenv("SUPPORT_PHONE", "0204186509")
 
-BULK_SMS_API_KEY = os.getenv("BULK_SMS_API_KEY")
-BULK_SMS_SENDER_ID = os.getenv("BULK_SMS_SENDER_ID", "FLAP")
+BULK_SMS_API_KEY = os.getenv("BULK_SMS_API_KEY")  #sms api (bulk sms ghana) 
+BULK_SMS_SENDER_ID = os.getenv("BULK_SMS_SENDER_ID")
 
 # --- Firebase initialization ---
 FIREBASE_CREDENTIALS_JSON = os.getenv("FIREBASE_CREDENTIALS_JSON")
