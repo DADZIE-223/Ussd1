@@ -136,7 +136,7 @@ KFC_TARKWA_DELIVERY_PRICES = {
 
 memory_sessions = {}
 
-GAS_SIZES = [("3kg", 60), ("6kg", 120), ("12.5kg", 240)]  # Size, min price
+GAS_SIZES = [("3kg", 20), ("6kg", 30), ("12.5kg", 50)]  # Size, min price
 
 CUSTOM_ORDER_MENUS = [
     "Grocery (Ransbet)",
