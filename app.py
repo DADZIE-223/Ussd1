@@ -112,7 +112,6 @@ MENUS = {
     "Pizzaman": [("Triple b-double Pizza", 290), ("Dukeman-small Pizza", 150), ("Chibella-double Pizza", 290)]
 }
 
-# Delivery fees by category (vendor) 
 CATEGORY_DELIVERY_FEES = {
     "Chef One": 15,
     "Eno's Kitchen": 15,
@@ -121,10 +120,10 @@ CATEGORY_DELIVERY_FEES = {
     "Founn": 15,
     "KFC - Tarkwa": 25,  # Will use special area logic below
     "Pizzaman": 15,
-    "Custom": 30  # Used for custom order
+    "Custom": 30
 }
 DEFAULT_DELIVERY_FEE = 15
-GAS_DELIVERY_FEE = 30  # Set your delivery fee for gas filling
+GAS_DELIVERY_FEE = 30
 
 KFC_TARKWA_DELIVERY_PRICES = {
     "tarkwa central": 30,
@@ -136,7 +135,7 @@ KFC_TARKWA_DELIVERY_PRICES = {
 
 memory_sessions = {}
 
-GAS_SIZES = [("3kg", 20), ("6kg", 30), ("12.5kg", 50)]  # Size, min price
+GAS_SIZES = [("3kg", 20), ("6kg", 30), ("12.5kg", 50)]
 
 CUSTOM_ORDER_MENUS = [
     "Grocery (Ransbet)",
@@ -174,14 +173,18 @@ def get_session(msisdn):
             "order_history": [],
             "session_id": str(uuid.uuid4()),
             "discount_code": None,
-            "discount_amount": 0
+            "discount_amount": 0,
+            "delivery_note": ""
         }
+    # Ensure delivery_note key is always present
+    if "delivery_note" not in memory_sessions[msisdn]:
+        memory_sessions[msisdn]["delivery_note"] = ""
     return memory_sessions[msisdn]
 
 def save_session(msisdn, session):
     memory_sessions[msisdn] = session
 
-def log_to_airtable_order(msisdn, userid, items, total, delivery_location, order_type, order_id):
+def log_to_airtable_order(msisdn, userid, items, total, delivery_location, order_type, order_id, delivery_note=""):
     if not airtable_orders:
         return
     try:
@@ -194,7 +197,8 @@ def log_to_airtable_order(msisdn, userid, items, total, delivery_location, order
             "DeliveryLocation": delivery_location,
             "OrderType": order_type,
             "Status": "Processing",
-            "CreatedAt": get_airtable_datetime()
+            "CreatedAt": get_airtable_datetime(),
+            "DeliveryNote": delivery_note
         })
         logger.info(f"Order logged to Airtable: {msisdn} - {order_id}")
     except Exception as e:
@@ -217,6 +221,7 @@ def get_delivery_fee(session):
 
 def create_order(session, msisdn, order_type="regular", user_id=""):
     order_id = str(uuid.uuid4())[:8].upper()
+    delivery_note = session.get("delivery_note", "")
     if order_type == "custom":
         items = [{
             "name": f"Custom Order ({session.get('custom_order_type', 'Other')})",
@@ -240,7 +245,8 @@ def create_order(session, msisdn, order_type="regular", user_id=""):
         log_to_airtable_order(
             msisdn, user_id, items, total,
             session.get("gas_location", ""),
-            order_type, order_id
+            order_type, order_id,
+            delivery_note
         )
         session["order_history"].append({
             "order_id": order_id,
@@ -271,7 +277,8 @@ def create_order(session, msisdn, order_type="regular", user_id=""):
     log_to_airtable_order(
         msisdn, user_id, items, total,
         session.get("delivery_location", ""),
-        order_type, order_id
+        order_type, order_id,
+        delivery_note
     )
 
     session["order_history"].append({
@@ -337,6 +344,8 @@ def ussd_handler():
             response = handle_confirm(input_text, session, user_id, msisdn)
         elif state == "CUSTOM_CONFIRM":
             response = handle_custom_confirm(input_text, session, user_id, msisdn)
+        elif state == "DELIVERY_NOTE":
+            response = handle_delivery_note(input_text, session, user_id, msisdn)
         else:
             session["state"] = "MAIN_MENU"
             response = handle_main_menu("", session, user_id, msisdn)
@@ -450,15 +459,9 @@ def handle_gas_confirm(input_text, session, user_id, msisdn):
         session["state"] = "MAIN_MENU"
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
-        order_id, total = create_order(session, msisdn, "gas_filling", user_id)
-        sms_msg = f"Your Gas Filling order #{order_id} received! Pay GHS {total} to *415*1738# to process your order."
-        send_sms_ghana(msisdn, sms_msg)
-        session.pop("selected_gas", None)
-        session.pop("gas_fill_amount", None)
-        session.pop("gas_location", None)
-        session["state"] = "MAIN_MENU"
-        msg = f"Order #{order_id} created!\nPay GHS {total} to *415*1738# for processing.\nThank you!"
-        return ussd_response(user_id, msisdn, msg, False)
+        session["state"] = "DELIVERY_NOTE"
+        msg = "Enter delivery note for rider (optional, max 100 chars). Or press 0 to skip:"
+        return ussd_response(user_id, msisdn, msg, True)
     return show_gas_confirmation(session, user_id, msisdn)
 
 def handle_custom_order_type(input_text, session, user_id, msisdn):
@@ -649,17 +652,12 @@ def handle_confirm(input_text, session, user_id, msisdn):
         session["state"] = "MAIN_MENU"
         session["discount_code"] = None
         session["discount_amount"] = 0
+        session["delivery_note"] = ""
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
-        order_id, total = create_order(session, msisdn, "regular", user_id)
-        sms_msg = f"Your order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!"
-        send_sms_ghana(msisdn, sms_msg)
-        session["cart"] = []
-        session["discount_code"] = None
-        session["discount_amount"] = 0
-        session["state"] = "MAIN_MENU"
-        msg = f"Order #{order_id} created!\nPlease dial *415*1738# and pay GHS {total} for order processing.\nThank you!"
-        return ussd_response(user_id, msisdn, msg, False)
+        session["state"] = "DELIVERY_NOTE"
+        msg = "Enter delivery note for rider (optional, max 100 chars). Or press 0 to skip:"
+        return ussd_response(user_id, msisdn, msg, True)
     return show_final_confirmation(session, user_id, msisdn)
 
 def handle_custom_order(input_text, session, user_id, msisdn):
@@ -679,16 +677,12 @@ def handle_custom_confirm(input_text, session, user_id, msisdn):
         session["custom_order"] = ""
         session["custom_order_type"] = ""
         session["state"] = "MAIN_MENU"
+        session["delivery_note"] = ""
         return handle_main_menu("", session, user_id, msisdn)
     elif input_text == "1":
-        order_id, total = create_order(session, msisdn, "custom", user_id)
-        sms_msg = f"Your FLAP Dish custom order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!"
-        send_sms_ghana(msisdn, sms_msg)
-        session["custom_order"] = ""
-        session["custom_order_type"] = ""
-        session["state"] = "MAIN_MENU"
-        msg = f"Custom Order #{order_id} created!\nPlease dial *415*1738# and pay GHS {total} for delivery.\nThank you!"
-        return ussd_response(user_id, msisdn, msg, False)
+        session["state"] = "DELIVERY_NOTE"
+        msg = "Enter delivery note for rider (optional, max 100 chars). Or press 0 to skip:"
+        return ussd_response(user_id, msisdn, msg, True)
     return show_custom_confirmation(session, user_id, msisdn)
 
 def show_custom_confirmation(session, user_id, msisdn):
@@ -701,6 +695,41 @@ def show_custom_confirmation(session, user_id, msisdn):
         "1. Confirm\n2. Cancel"
     )
     return ussd_response(user_id, msisdn, msg, True)
+
+def handle_delivery_note(input_text, session, user_id, msisdn):
+    note = input_text.strip()
+    if note == "0" or not note:
+        session["delivery_note"] = ""
+    else:
+        session["delivery_note"] = note[:100]
+    # Determine order type and finalize order
+    msg = ""
+    if session.get("custom_order"):
+        order_id, total = create_order(session, msisdn, "custom", user_id)
+        sms_msg = f"Your FLAP Dish custom order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!\nNote: {session['delivery_note']}" if session['delivery_note'] else f"Your FLAP Dish custom order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!"
+        send_sms_ghana(msisdn, sms_msg)
+        msg = f"Custom Order #{order_id} created!\nPlease dial *415*1738# and pay GHS {total} for delivery.\nThank you!"
+        session["custom_order"] = ""
+        session["custom_order_type"] = ""
+    elif session.get("gas_fill_amount"):
+        order_id, total = create_order(session, msisdn, "gas_filling", user_id)
+        sms_msg = f"Your Gas Filling order #{order_id} received! Pay GHS {total} to *415*1738# to process your order.\nNote: {session['delivery_note']}" if session['delivery_note'] else f"Your Gas Filling order #{order_id} received! Pay GHS {total} to *415*1738# to process your order."
+        send_sms_ghana(msisdn, sms_msg)
+        msg = f"Order #{order_id} created!\nPay GHS {total} to *415*1738# for processing.\nThank you!"
+        session.pop("selected_gas", None)
+        session.pop("gas_fill_amount", None)
+        session.pop("gas_location", None)
+    else:
+        order_id, total = create_order(session, msisdn, "regular", user_id)
+        sms_msg = f"Your order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!\nNote: {session['delivery_note']}" if session['delivery_note'] else f"Your order #{order_id} has been received! Please dial *415*1738# and pay GHS {total} to process your order. Thank you!"
+        send_sms_ghana(msisdn, sms_msg)
+        msg = f"Order #{order_id} created!\nPlease dial *415*1738# and pay GHS {total} for order processing.\nThank you!"
+        session["cart"] = []
+        session["discount_code"] = None
+        session["discount_amount"] = 0
+    session["delivery_note"] = ""
+    session["state"] = "MAIN_MENU"
+    return ussd_response(user_id, msisdn, msg, False)
 
 def ussd_response(userid, msisdn, msg, continue_session=True):
     truncated_msg = msg[:160]
