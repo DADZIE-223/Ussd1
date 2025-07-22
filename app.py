@@ -104,10 +104,10 @@ CATEGORIES = [
 
 MENUS = {
     "Chef One": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35)],
-    "Eno's Kitchen": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("FriedRice & Chicken", 35)],
+    "Eno's Kitchen": [("Jollof Rice", 35), ("FriedRice & Chicken", 35)],
     "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
-    "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("Jollof & Chicken", 35)],
-    "Founn": [("Banku & Tilapia", 35), ("FriedRice & Chicken", 35), ("Jollof & Chicken", 35)],
+    "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 40), ("Jollof & Chicken", 35)],
+    "Founn": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("FriedRice & Chicken", 40)],
     "KFC - Tarkwa": [("15 Pieces Chicken", 427), ("Streetwise 2-Chips", 88), ("Streetwise 3-Rice", 112)],
     "Pizzaman": [("Triple b-double Pizza", 290), ("Dukeman-small Pizza", 150), ("Chibella-double Pizza", 290)]
 }
