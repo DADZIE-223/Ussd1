@@ -103,7 +103,7 @@ CATEGORIES = [
 ]
 
 MENUS = {
-    "Chef One": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35)],
+    "Chef One": [("Jollof Rice", 35), ("Banku & Tilapia", 40), ("Indomie", 35), ("FriedRice & Chicken", 35), ("Banku & Tilapia", 70)],
     "Eno's Kitchen": [("Jollof Rice", 35), ("FriedRice & Chicken", 35)],
     "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
     "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 40), ("Jollof & Chicken", 35)],
