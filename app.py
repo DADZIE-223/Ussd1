@@ -108,7 +108,7 @@ MENUS = {
     "Tovet": [("Jollof & Chicken", 35), ("FriedRice & Chicken", 35), ("Banku", 40)],
     "Dine Inn - KT": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 40), ("Jollof & Chicken", 35)],
     "Founn": [("FriedRice & Chicken", 35), ("Jollof & Chicken", 35), ("FriedRice & Chicken", 40)],
-    "KFC - Tarkwa": [("15 Pieces Chicken", 427), ("Streetwise 2-Chips", 88), ("Streetwise 3-Rice", 112)],
+    "KFC - Tarkwa": [("STREETWISE 3 CHIPS", 90), ("Streetwise 2-Chips", 70), ("Streetwise 3-Rice", 95)],
     "Pizzaman": [("Triple b-double Pizza", 290), ("Dukeman-small Pizza", 150), ("Chibella-double Pizza", 290)]
 }
 
